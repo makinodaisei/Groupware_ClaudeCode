@@ -1,0 +1,415 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Groupware MVP - AWS SAM Template
+  Internal groupware: Schedule, Facility Reservation, Document Management, User Management
+
+# ---------- Parameters ----------
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, prod]
+    Default: dev
+    Description: Deployment environment
+
+  CognitoUserPoolId:
+    Type: String
+    Description: Cognito User Pool ID (created separately or via this template)
+
+  CognitoUserPoolClientId:
+    Type: String
+    Description: Cognito User Pool Client ID
+
+# ---------- Globals ----------
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 29
+    Layers:
+      - !Ref CommonLayer
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref GroupwareTable
+        BUCKET_NAME: !Ref DocumentsBucket
+        ENVIRONMENT: !Ref Environment
+        USER_POOL_ID: !Ref CognitoUserPool
+    Tracing: Active
+
+# ---------- Resources ----------
+Resources:
+
+  # ===== Cognito =====
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "groupware-${Environment}"
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "groupware-client-${Environment}"
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  AdminUserGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      UserPoolId: !Ref CognitoUserPool
+      Description: Administrators with full access
+
+  RegularUserGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: user
+      UserPoolId: !Ref CognitoUserPool
+      Description: Regular users
+
+  # ===== API Gateway =====
+  GroupwareApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Environment
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+              audience:
+                - !Ref CognitoUserPoolClient
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+          - X-Amz-Date
+          - X-Api-Key
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        MaxAge: 600
+
+  # ===== Lambda Layer =====
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub "groupware-common-${Environment}"
+      Description: Shared utilities for all Groupware Lambda functions
+      ContentUri: backend/layers/common/
+      CompatibleRuntimes:
+        - python3.12
+      CompatibleArchitectures:
+        - arm64
+    Metadata:
+      BuildMethod: python3.12
+
+  # ===== Lambda Functions =====
+  UsersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "groupware-users-${Environment}"
+      CodeUri: backend/functions/users/
+      Handler: handler.lambda_handler
+      Description: User management via Cognito
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroupwareTable
+        - Statement:
+            Effect: Allow
+            Action:
+              - cognito-idp:AdminCreateUser
+              - cognito-idp:AdminDeleteUser
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:AdminRemoveUserFromGroup
+              - cognito-idp:AdminGetUser
+              - cognito-idp:AdminUpdateUserAttributes
+              - cognito-idp:ListUsers
+              - cognito-idp:ListUsersInGroup
+            Resource: !GetAtt CognitoUserPool.Arn
+      Events:
+        UsersRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /users
+            Method: ANY
+        UsersProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /users/{proxy+}
+            Method: ANY
+
+  SchedulesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "groupware-schedules-${Environment}"
+      CodeUri: backend/functions/schedules/
+      Handler: handler.lambda_handler
+      Description: Schedule management with monthly/weekly view
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroupwareTable
+      Events:
+        SchedulesRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /schedules
+            Method: ANY
+        SchedulesProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /schedules/{proxy+}
+            Method: ANY
+
+  FacilitiesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "groupware-facilities-${Environment}"
+      CodeUri: backend/functions/facilities/
+      Handler: handler.lambda_handler
+      Description: Facility reservation with exclusive control
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroupwareTable
+      Events:
+        FacilitiesRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facilities
+            Method: ANY
+        FacilitiesProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facilities/{proxy+}
+            Method: ANY
+
+  DocumentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "groupware-documents-${Environment}"
+      CodeUri: backend/functions/documents/
+      Handler: handler.lambda_handler
+      Description: Document management with S3 presigned URLs
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroupwareTable
+        - S3CrudPolicy:
+            BucketName: !Ref DocumentsBucket
+      Events:
+        DocumentsRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /documents
+            Method: ANY
+        DocumentsProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /documents/{proxy+}
+            Method: ANY
+        S3Upload:
+          Type: S3
+          Properties:
+            Bucket: !Ref DocumentsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+
+  # ===== DynamoDB =====
+  GroupwareTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "groupware-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+        - AttributeName: gsi2pk
+          AttributeType: S
+        - AttributeName: gsi2sk
+          AttributeType: S
+        - AttributeName: gsi3pk
+          AttributeType: S
+        - AttributeName: gsi3sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: DateRangeIndex
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: ReservationByDateIndex
+          KeySchema:
+            - AttributeName: gsi2pk
+              KeyType: HASH
+            - AttributeName: gsi2sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: UserByEmailIndex
+          KeySchema:
+            - AttributeName: gsi3pk
+              KeyType: HASH
+            - AttributeName: gsi3sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ===== S3 =====
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "groupware-docs-${Environment}-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldNoncurrentVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [GET, PUT, POST]
+            AllowedOrigins: ["*"]
+            MaxAge: 3600
+
+  DocumentsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyNonSSL
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt DocumentsBucket.Arn
+              - !Sub "${DocumentsBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  DocumentsFunctionS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocumentsFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt DocumentsBucket.Arn
+
+# ---------- Outputs ----------
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${GroupwareApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub "groupware-${Environment}-UserPoolId"
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
+    Export:
+      Name: !Sub "groupware-${Environment}-UserPoolClientId"
+
+  TableName:
+    Description: DynamoDB table name
+    Value: !Ref GroupwareTable
+    Export:
+      Name: !Sub "groupware-${Environment}-TableName"
+
+  BucketName:
+    Description: S3 bucket name for documents
+    Value: !Ref DocumentsBucket
+    Export:
+      Name: !Sub "groupware-${Environment}-BucketName"

@@ -1,0 +1,2 @@
+# No external dependencies for the common layer
+# All modules use only Python stdlib + boto3 (provided by Lambda runtime)

@@ -1,0 +1,28 @@
+# Claude Code local settings
+.claude/
+
+# SAM build artifacts
+.aws-sam/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Generated Excel artifacts (regenerated from docs/)
+artifacts/*.xlsx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*

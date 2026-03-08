@@ -1,0 +1,7 @@
+---
+include_checks:
+  - I
+ignore_checks:
+  - W3002  # Warn on transforms not supported by cfn-lint (SAM)
+regions:
+  - ap-northeast-1

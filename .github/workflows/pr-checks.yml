@@ -1,0 +1,85 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  lint-and-test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff pytest pytest-cov boto3 pyyaml openpyxl moto[dynamodb,s3,cognitoidp]
+
+      - name: Lint with ruff
+        run: |
+          ruff check backend/ tools/
+          ruff format --check backend/ tools/
+
+      - name: Run unit tests
+        env:
+          AWS_DEFAULT_REGION: ap-northeast-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+        run: |
+          pytest backend/ -v \
+            --cov=backend \
+            --cov-report=term-missing \
+            --cov-fail-under=75
+
+  cfn-lint:
+    name: CloudFormation Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cfn-lint and SAM CLI
+        run: |
+          pip install cfn-lint
+          pip install aws-sam-cli
+
+      - name: Validate SAM template
+        run: sam validate --template template.yaml --lint
+
+      - name: Run cfn-lint
+        run: cfn-lint template.yaml
+
+  doc-check:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install doc dependencies
+        run: pip install openpyxl pyyaml
+
+      - name: Check Markdown tables can be converted to Excel
+        run: |
+          python tools/md2excel.py --input docs/db-definition.md --output /tmp/db-definition.xlsx
+          python tools/md2excel.py --input docs/api-spec.md --output /tmp/api-spec.xlsx
+          python tools/md2excel.py --input docs/infrastructure.md --output /tmp/infrastructure.xlsx
+          echo "All documentation files converted successfully"

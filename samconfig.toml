@@ -1,0 +1,42 @@
+version = 0.1
+
+[default]
+[default.global.parameters]
+stack_name = "groupware-dev"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[dev]
+[dev.deploy.parameters]
+stack_name = "groupware-dev"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket"
+s3_prefix = "groupware-dev"
+region = "ap-northeast-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=dev",
+    "CognitoUserPoolId=CHANGE_ME",
+    "CognitoUserPoolClientId=CHANGE_ME"
+]
+tags = "Project=groupware Environment=dev"
+
+[prod]
+[prod.deploy.parameters]
+stack_name = "groupware-prod"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket"
+s3_prefix = "groupware-prod"
+region = "ap-northeast-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=prod",
+    "CognitoUserPoolId=CHANGE_ME",
+    "CognitoUserPoolClientId=CHANGE_ME"
+]
+tags = "Project=groupware Environment=prod"

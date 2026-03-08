@@ -1,0 +1,85 @@
+name: Deploy to Dev
+
+on:
+  push:
+    branches:
+      - develop
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    name: SAM Deploy (dev)
+    runs-on: ubuntu-latest
+    environment: dev
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install SAM CLI
+        run: pip install aws-sam-cli
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - name: SAM Build
+        run: sam build --parallel --cached
+
+      - name: SAM Deploy (dev)
+        run: |
+          sam deploy \
+            --config-env dev \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "Environment=dev" \
+              "CognitoUserPoolId=${{ secrets.DEV_COGNITO_USER_POOL_ID }}" \
+              "CognitoUserPoolClientId=${{ secrets.DEV_COGNITO_USER_POOL_CLIENT_ID }}"
+
+      - name: Output stack info
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name groupware-dev \
+            --query 'Stacks[0].Outputs' \
+            --output table
+
+  generate-docs:
+    name: Generate Excel Docs
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install doc dependencies
+        run: pip install openpyxl pyyaml
+
+      - name: Generate Excel artifacts
+        run: python tools/md2excel.py --all
+
+      - name: Upload Excel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: excel-docs-dev-${{ github.sha }}
+          path: artifacts/*.xlsx
+          retention-days: 30
