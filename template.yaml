@@ -12,19 +12,12 @@ Parameters:
     Default: dev
     Description: Deployment environment
 
-  CognitoUserPoolId:
-    Type: String
-    Description: Cognito User Pool ID (created separately or via this template)
-
-  CognitoUserPoolClientId:
-    Type: String
-    Description: Cognito User Pool Client ID
 
 # ---------- Globals ----------
 Globals:
   Function:
     Runtime: python3.12
-    Architectures: [arm64]
+    Architectures: [x86_64]
     MemorySize: 256
     Timeout: 29
     Layers:
@@ -144,7 +137,7 @@ Resources:
       CompatibleRuntimes:
         - python3.12
       CompatibleArchitectures:
-        - arm64
+        - x86_64
     Metadata:
       BuildMethod: python3.12
 
@@ -258,16 +251,7 @@ Resources:
             ApiId: !Ref GroupwareApi
             Path: /documents/{proxy+}
             Method: ANY
-        S3Upload:
-          Type: S3
-          Properties:
-            Bucket: !Ref DocumentsBucket
-            Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: uploads/
+        # S3Upload event is set up post-deployment via CLI to avoid circular dependency
 
   # ===== DynamoDB =====
   GroupwareTable:
@@ -376,13 +360,6 @@ Resources:
               Bool:
                 aws:SecureTransport: false
 
-  DocumentsFunctionS3Permission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref DocumentsFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !GetAtt DocumentsBucket.Arn
 
 # ---------- Outputs ----------
 Outputs:

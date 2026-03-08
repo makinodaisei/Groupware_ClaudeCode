@@ -46,10 +46,21 @@ jobs:
             --config-env dev \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "Environment=dev" \
-              "CognitoUserPoolId=${{ secrets.DEV_COGNITO_USER_POOL_ID }}" \
-              "CognitoUserPoolClientId=${{ secrets.DEV_COGNITO_USER_POOL_CLIENT_ID }}"
+            --parameter-overrides "Environment=dev"
+
+      - name: Configure S3 Lambda trigger (post-deploy, avoids circular dependency)
+        run: |
+          FUNC_ARN=$(aws lambda get-function --function-name groupware-documents-dev --query 'Configuration.FunctionArn' --output text)
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          aws lambda add-permission \
+            --function-name groupware-documents-dev \
+            --statement-id s3-invoke \
+            --action lambda:InvokeFunction \
+            --principal s3.amazonaws.com \
+            --source-arn "arn:aws:s3:::groupware-docs-dev-${ACCOUNT_ID}" 2>/dev/null || true
+          aws s3api put-bucket-notification-configuration \
+            --bucket "groupware-docs-dev-${ACCOUNT_ID}" \
+            --notification-configuration "{\"LambdaFunctionConfigurations\":[{\"LambdaFunctionArn\":\"${FUNC_ARN}\",\"Events\":[\"s3:ObjectCreated:*\"],\"Filter\":{\"Key\":{\"FilterRules\":[{\"Name\":\"prefix\",\"Value\":\"uploads/\"}]}}}]}"
 
       - name: Output stack info
         run: |
