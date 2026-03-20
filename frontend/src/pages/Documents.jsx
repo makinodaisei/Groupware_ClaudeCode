@@ -1,3 +1,246 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { api } from '../lib/api';
+import { getFileIcon, formatSize } from '../lib/helpers';
+import { useToast } from '../components/Toast';
+
+function buildTree(folders) {
+  const nodeMap = {};
+  folders.forEach(f => { nodeMap[f.folderId] = { ...f, children: [] }; });
+  const roots = [];
+  folders.forEach(f => {
+    const parts = (f.path || '/').split('/').filter(Boolean);
+    if (parts.length <= 1) {
+      roots.push(nodeMap[f.folderId]);
+    } else if (f.parentFolderId && nodeMap[f.parentFolderId]) {
+      nodeMap[f.parentFolderId].children.push(nodeMap[f.folderId]);
+    } else {
+      roots.push(nodeMap[f.folderId]);
+    }
+  });
+  return roots;
+}
+
+function FolderTree({ nodes, depth, currentFolderId, onSelect }) {
+  return nodes.map(node => (
+    <div key={node.folderId}>
+      <div
+        className={`folder-item${node.folderId === currentFolderId ? ' active' : ''}`}
+        style={{ paddingLeft: `${0.4 + depth}rem` }}
+        onClick={() => onSelect(node.folderId)}
+      >
+        <span className="folder-item-icon">{node.children.length ? '📂' : '📁'}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{node.name}</span>
+      </div>
+      {node.children.length > 0 && <FolderTree nodes={node.children} depth={depth + 1} currentFolderId={currentFolderId} onSelect={onSelect} />}
+    </div>
+  ));
+}
+
 export default function Documents() {
-  return <div><h2>文書管理</h2></div>;
+  const showToast = useToast();
+  const [folders, setFolders] = useState([]);
+  const [folderMap, setFolderMap] = useState({});
+  const [currentFolderId, setCurrentFolderId] = useState(null);
+  const [breadcrumb, setBreadcrumb] = useState([]);
+  const [files, setFiles] = useState(null);
+  const [showFolderInput, setShowFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const loadFolders = useCallback(async () => {
+    try {
+      const data = await api('GET', '/documents/folders');
+      const fList = data.folders || [];
+      const fMap = {};
+      fList.forEach(f => { fMap[f.folderId] = f; });
+      setFolders(fList);
+      setFolderMap(fMap);
+    } catch {
+      showToast('フォルダの取得に失敗しました', 'error');
+    }
+  }, [showToast]);
+
+  useEffect(() => { loadFolders(); }, [loadFolders]);
+
+  function selectFolder(folderId) {
+    setCurrentFolderId(folderId);
+    if (folderId) {
+      const f = folderMap[folderId];
+      const parts = f ? (f.path || '/').split('/').filter(Boolean) : [];
+      const crumbs = parts.map((name, i) => {
+        const partialPath = '/' + parts.slice(0, i + 1).join('/');
+        const match = Object.values(folderMap).find(x => x.path === partialPath);
+        return { name, folderId: match?.folderId || null };
+      });
+      setBreadcrumb(crumbs);
+      loadFiles(folderId);
+    } else {
+      setBreadcrumb([]);
+      setFiles(null);
+    }
+  }
+
+  async function loadFiles(folderId) {
+    setFiles(null);
+    try {
+      const data = await api('GET', `/documents/folders/${folderId}/files`);
+      setFiles(data.files || []);
+    } catch {
+      setFiles([]);
+      showToast('ファイルの取得に失敗しました', 'error');
+    }
+  }
+
+  async function createFolder() {
+    if (!newFolderName.trim()) return;
+    const body = { name: newFolderName.trim() };
+    if (currentFolderId) {
+      const f = folderMap[currentFolderId];
+      body.parentFolderId = currentFolderId;
+      body.parentPath = f?.path || '/';
+    }
+    try {
+      await api('POST', '/documents/folders', body);
+      setNewFolderName('');
+      setShowFolderInput(false);
+      showToast('フォルダを作成しました', 'success');
+      loadFolders();
+    } catch {
+      showToast('フォルダ作成に失敗しました', 'error');
+    }
+  }
+
+  async function downloadFile(fileId) {
+    if (!currentFolderId) return;
+    try {
+      const data = await api('GET', `/documents/folders/${currentFolderId}/files/${fileId}/download-url`);
+      if (data.downloadUrl) window.open(data.downloadUrl, '_blank');
+      else showToast('ダウンロードURLの取得に失敗しました', 'error');
+    } catch {
+      showToast('エラーが発生しました', 'error');
+    }
+  }
+
+  function handleFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file || !currentFolderId) return;
+    e.target.value = '';
+    uploadFile(file);
+  }
+
+  async function uploadFile(file) {
+    let uploadData;
+    try {
+      uploadData = await api('POST', `/documents/folders/${currentFolderId}/files/upload-url`, {
+        name: file.name, contentType: file.type || 'application/octet-stream', size: file.size
+      });
+    } catch {
+      showToast('アップロードURLの取得に失敗しました', 'error');
+      return;
+    }
+    setUploadProgress({ name: file.name, pct: 0 });
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadData.uploadUrl);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) setUploadProgress({ name: file.name, pct: Math.round(ev.loaded / ev.total * 100) });
+    };
+    xhr.onload = () => {
+      setUploadProgress(null);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        showToast(`${file.name} をアップロードしました`, 'success');
+        if (currentFolderId) loadFiles(currentFolderId);
+      } else {
+        showToast('アップロードに失敗しました', 'error');
+      }
+    };
+    xhr.onerror = () => { setUploadProgress(null); showToast('アップロードエラー', 'error'); };
+    xhr.send(file);
+  }
+
+  const tree = buildTree(folders);
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: '1.25rem', fontSize: '1.1rem', fontWeight: 700 }}>文書管理</h2>
+      <div className="doc-layout">
+        {/* Folder tree */}
+        <div className="folder-tree">
+          <div className="folder-tree-header">
+            <span className="folder-tree-label">フォルダ</span>
+            <button className="folder-add-btn" onClick={() => setShowFolderInput(s => !s)}>＋</button>
+          </div>
+          {showFolderInput && (
+            <div style={{ marginBottom: '0.5rem' }}>
+              <input className="folder-inline-input" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="フォルダ名" onKeyDown={e => e.key === 'Enter' && createFolder()} autoFocus />
+              <div style={{ display: 'flex', gap: '0.3rem' }}>
+                <button className="btn btn-primary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={createFolder}>作成</button>
+                <button className="btn btn-secondary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={() => setShowFolderInput(false)}>キャンセル</button>
+              </div>
+            </div>
+          )}
+          <div id="folder-tree-list">
+            <FolderTree nodes={tree} depth={0} currentFolderId={currentFolderId} onSelect={selectFolder} />
+          </div>
+        </div>
+
+        {/* File area */}
+        <div className="file-area">
+          {/* Breadcrumb */}
+          <div className="breadcrumb">
+            <span className="breadcrumb-item" onClick={() => selectFolder(null)}>ホーム</span>
+            {breadcrumb.map((crumb, i) => (
+              <span key={i}>
+                <span className="breadcrumb-sep">›</span>
+                {i === breadcrumb.length - 1
+                  ? <span className="breadcrumb-current">{crumb.name}</span>
+                  : <span className="breadcrumb-item" onClick={() => crumb.folderId && selectFolder(crumb.folderId)}>{crumb.name}</span>
+                }
+              </span>
+            ))}
+            <div className="breadcrumb-actions">
+              <button className="btn btn-primary" style={{ fontSize: '0.78rem' }} disabled={!currentFolderId} onClick={() => fileInputRef.current?.click()}>
+                ⬆ アップロード
+              </button>
+            </div>
+          </div>
+
+          {/* File grid */}
+          <div className="file-grid" id="file-grid">
+            {files === null ? (
+              currentFolderId
+                ? [1,2,3].map(i => <div key={i} className="skeleton skeleton-row" style={{ height: 80, borderRadius: 6 }} />)
+                : <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', gridColumn: '1/-1' }}>フォルダを選択してください</div>
+            ) : (
+              <>
+                {files.map(f => (
+                  <div key={f.fileId} className="file-card" onClick={() => downloadFile(f.fileId)}>
+                    <div className="file-card-icon">{getFileIcon(f.name)}</div>
+                    <div className="file-card-name">{f.name}</div>
+                    <div className="file-card-size">{formatSize(f.size)}</div>
+                  </div>
+                ))}
+                <div className="file-card file-card-add" onClick={() => fileInputRef.current?.click()}>
+                  <div className="file-card-icon" style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>＋</div>
+                  <div className="file-card-name" style={{ color: 'var(--color-text-muted)' }}>追加</div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Upload progress */}
+          {uploadProgress && (
+            <div className="upload-progress">
+              <div className="progress-bar-wrap">
+                <div className="progress-bar" style={{ width: `${uploadProgress.pct}%` }} />
+              </div>
+              <div className="progress-label">{uploadProgress.name} — {uploadProgress.pct}%</div>
+            </div>
+          )}
+        </div>
+      </div>
+      <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileSelected} />
+    </div>
+  );
 }
