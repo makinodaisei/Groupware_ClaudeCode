@@ -964,27 +964,49 @@ tr:hover td { background: #fafbfc; }
   // ===== Dashboard =====
   async function loadDashboard() {
     const now = new Date();
-    const month = now.toISOString().slice(0, 7);
+    const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const today = now.toISOString().slice(0, 10);
 
-    try {
-      const schedules = await api('GET', `/schedules?month=${month}`);
-      document.getElementById('stat-events').textContent = schedules.count ?? '-';
-      const rows = (schedules.events || []).slice(0, 5).map(e => `
-        <tr>
-          <td>${e.startDatetime?.slice(0, 16).replace('T', ' ')}</td>
-          <td>${e.title}</td>
-          <td>${e.location || '-'}</td>
-          <td><span class="badge ${e.isPublic ? 'badge-blue' : 'badge-orange'}">${e.isPublic ? '公開' : '非公開'}</span></td>
-        </tr>`).join('');
-      document.getElementById('recent-events').innerHTML = rows || '<tr><td colspan="4" style="text-align:center;color:#a0aec0;padding:1rem;">スケジュールなし</td></tr>';
-    } catch (e) {
-      document.getElementById('recent-events').innerHTML = '<tr><td colspan="4">読み込みエラー</td></tr>';
-    }
+    // 今月スケジュール数 + 直近スケジュール
+    api('GET', `/schedules?month=${month}`).then(data => {
+      document.getElementById('stat-events').textContent = data.count ?? '—';
+      const rows = (data.events || []).slice(0, 5).map(e => {
+        const { date, time } = fromISO(e.startDatetime);
+        return `<div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #f1f5f9;">
+        <div style="width:8px;height:8px;border-radius:50%;background:${e.isPublic ? '#3b82f6' : '#f97316'};flex-shrink:0;"></div>
+        <div style="flex:1;font-size:0.875rem;">${escHtml(e.title)}</div>
+        <div style="font-size:0.78rem;color:var(--color-text-muted);">${date} ${time}</div>
+      </div>`;
+      }).join('');
+      document.getElementById('recent-events').innerHTML = rows ||
+        '<p style="color:var(--color-text-muted);padding:1rem 0;font-size:0.875rem;">スケジュールなし</p>';
+    }).catch(() => {
+      document.getElementById('stat-events').textContent = '—';
+      document.getElementById('recent-events').innerHTML = '<p style="color:var(--color-text-muted);">読み込みエラー</p>';
+    });
 
-    document.getElementById('stat-reservations').textContent = '-';
-    document.getElementById('stat-docs').textContent = '-';
-    document.getElementById('stat-users').textContent = '-';
+    // 今日の施設予約数（施設一覧→各施設の当日予約を並列取得）
+    api('GET', '/facilities').then(async data => {
+      const facilities = data.facilities || [];
+      const counts = await Promise.all(
+        facilities.map(f =>
+          api('GET', `/facilities/${f.facilityId}/reservations?date=${today}`)
+            .then(r => (r.reservations || []).length)
+            .catch(() => 0)
+        )
+      );
+      document.getElementById('stat-reservations').textContent = counts.reduce((a, b) => a + b, 0);
+    }).catch(() => { document.getElementById('stat-reservations').textContent = '—'; });
+
+    // 文書フォルダ数
+    api('GET', '/documents/folders').then(data => {
+      document.getElementById('stat-docs').textContent = (data.folders || []).length;
+    }).catch(() => { document.getElementById('stat-docs').textContent = '—'; });
+
+    // ユーザー数（adminのみ成功するがエラーは静かに処理）
+    api('GET', '/users').then(data => {
+      document.getElementById('stat-users').textContent = (data.users || []).length;
+    }).catch(() => { document.getElementById('stat-users').textContent = '—'; });
   }
 
   // ===== Calendar =====
