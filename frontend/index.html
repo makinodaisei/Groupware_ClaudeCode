@@ -882,6 +882,9 @@ tr:hover td { background: #fafbfc; }
   let currentUser = null;
   let idToken = null;
   let currentMonth = new Date();
+  let _currentFolderId = null;
+  let _currentFolderPath = []; // { name, folderId }
+  let _folderMap = {};
 
   // ===== Auth =====
   async function login() {
@@ -1296,37 +1299,230 @@ tr:hover td { background: #fafbfc; }
 
   // ===== Documents =====
   async function loadDocuments() {
+    _currentFolderId = null;
+    _currentFolderPath = [];
+    _folderMap = {};
     try {
       const data = await api('GET', '/documents/folders');
-      const html = (data.folders || []).map(f => `
-        <div style="padding:0.5rem; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:0.5rem;">
-          <span>📁</span>
-          <span>${f.name}</span>
-          <span style="color:#a0aec0; font-size:0.8rem;">${f.path}</span>
-          <button class="btn btn-primary" style="font-size:0.75rem; margin-left:auto;" onclick="viewFolder('${f.folderId}', '${f.name}')">開く</button>
-        </div>`).join('');
-      document.getElementById('folder-tree').innerHTML = html || '<p style="color:#a0aec0;">フォルダなし</p>';
-    } catch (e) {
-      document.getElementById('folder-tree').innerHTML = '<p>読み込みエラー</p>';
+      const folders = data.folders || [];
+      folders.forEach(f => { _folderMap[f.folderId] = f; });
+      renderFolderTree(folders);
+      renderBreadcrumb();
+      document.getElementById('file-grid').innerHTML =
+        '<div style="color:var(--color-text-muted);font-size:0.85rem;padding:1rem;grid-column:1/-1;">フォルダを選択してください</div>';
+      document.getElementById('upload-btn').disabled = true;
+    } catch {
+      document.getElementById('folder-tree-list').innerHTML = '<p style="color:var(--color-text-muted);font-size:0.82rem;">読み込みエラー</p>';
     }
   }
 
-  async function createFolder() {
-    const name = prompt('フォルダ名:');
+  function buildTree(folders) {
+    const roots = [];
+    const nodeMap = {};
+    folders.forEach(f => {
+      nodeMap[f.folderId] = { ...f, children: [] };
+    });
+    folders.forEach(f => {
+      const parts = (f.path || '/').split('/').filter(Boolean);
+      if (parts.length <= 1) {
+        roots.push(nodeMap[f.folderId]);
+      } else {
+        if (f.parentFolderId && nodeMap[f.parentFolderId]) {
+          nodeMap[f.parentFolderId].children.push(nodeMap[f.folderId]);
+        } else {
+          roots.push(nodeMap[f.folderId]);
+        }
+      }
+    });
+    return roots;
+  }
+
+  function renderFolderTree(folders) {
+    const tree = buildTree(folders);
+    const listEl = document.getElementById('folder-tree-list');
+    listEl.innerHTML = '';
+    function renderNodes(nodes, depth) {
+      nodes.forEach(node => {
+        const item = document.createElement('div');
+        item.className = 'folder-item' + (node.folderId === _currentFolderId ? ' active' : '');
+        item.style.paddingLeft = `${0.4 + depth * 1}rem`;
+        item.innerHTML = `<span class="folder-item-icon">${node.children.length ? '📂' : '📁'}</span><span style="overflow:hidden;text-overflow:ellipsis;">${escHtml(node.name)}</span>`;
+        item.onclick = () => selectFolder(node.folderId);
+        listEl.appendChild(item);
+        if (node.children.length) renderNodes(node.children, depth + 1);
+      });
+    }
+    renderNodes(tree, 0);
+  }
+
+  function selectFolder(folderId) {
+    _currentFolderId = folderId;
+    document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active'));
+    if (folderId) {
+      const f = _folderMap[folderId];
+      const pathParts = f ? (f.path || '/').split('/').filter(Boolean) : [];
+      _currentFolderPath = pathParts.map((name, i) => {
+        const partialPath = '/' + pathParts.slice(0, i + 1).join('/');
+        const match = Object.values(_folderMap).find(x => x.path === partialPath);
+        return { name, folderId: match ? match.folderId : null };
+      });
+    } else {
+      _currentFolderPath = [];
+    }
+    renderBreadcrumb();
+    document.getElementById('upload-btn').disabled = !folderId;
+    if (folderId) loadFiles(folderId);
+    else {
+      document.getElementById('file-grid').innerHTML =
+        '<div style="color:var(--color-text-muted);font-size:0.85rem;padding:1rem;grid-column:1/-1;">フォルダを選択してください</div>';
+    }
+  }
+
+  function renderBreadcrumb() {
+    const bc = document.getElementById('doc-breadcrumb');
+    let html = `<span class="breadcrumb-item" onclick="selectFolder(null)">ホーム</span>`;
+    _currentFolderPath.forEach((crumb, i) => {
+      html += `<span class="breadcrumb-sep">›</span>`;
+      if (i === _currentFolderPath.length - 1) {
+        html += `<span class="breadcrumb-current">${escHtml(crumb.name)}</span>`;
+      } else {
+        const id = crumb.folderId ? `'${crumb.folderId}'` : 'null';
+        html += `<span class="breadcrumb-item" onclick="selectFolder(${id})">${escHtml(crumb.name)}</span>`;
+      }
+    });
+    html += `<div class="breadcrumb-actions"><button class="btn btn-primary" style="font-size:0.78rem;" onclick="showUploadPanel()" id="upload-btn" ${_currentFolderId ? '' : 'disabled'}>⬆ アップロード</button></div>`;
+    bc.innerHTML = html;
+  }
+
+  async function loadFiles(folderId) {
+    const grid = document.getElementById('file-grid');
+    grid.innerHTML = '<div class="skeleton-row skeleton" style="height:80px;border-radius:6px;"></div>'.repeat(3);
+    try {
+      const data = await api('GET', `/documents/folders/${folderId}/files`);
+      const files = data.files || [];
+      const fileCards = files.map(f => {
+        const icon = getFileIcon(f.name);
+        const size = formatSize(f.size);
+        return `<div class="file-card" onclick="downloadFile('${folderId}','${f.fileId}')">
+          <div class="file-card-icon">${icon}</div>
+          <div class="file-card-name">${escHtml(f.name)}</div>
+          <div class="file-card-size">${size}</div>
+        </div>`;
+      }).join('');
+      grid.innerHTML = fileCards +
+        `<div class="file-card file-card-add" onclick="document.getElementById('file-input').click()">
+          <div class="file-card-icon" style="font-size:1.2rem;color:var(--color-text-muted);">＋</div>
+          <div class="file-card-name" style="color:var(--color-text-muted);">追加</div>
+        </div>`;
+    } catch {
+      grid.innerHTML = '<p style="color:var(--color-text-muted);font-size:0.85rem;grid-column:1/-1;">読み込みエラー</p>';
+    }
+  }
+
+  function getFileIcon(name) {
+    const ext = (name || '').split('.').pop().toLowerCase();
+    const map = { pdf:'📄', xlsx:'📊', xls:'📊', docx:'📝', doc:'📝', pptx:'📋', ppt:'📋',
+                  png:'🖼️', jpg:'🖼️', jpeg:'🖼️', gif:'🖼️', zip:'📦', txt:'📃' };
+    return map[ext] || '📎';
+  }
+
+  function formatSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024*1024) return `${(bytes/1024).toFixed(0)} KB`;
+    return `${(bytes/1024/1024).toFixed(1)} MB`;
+  }
+
+  async function downloadFile(folderId, fileId) {
+    try {
+      const data = await api('GET', `/documents/folders/${folderId}/files/${fileId}/download-url`);
+      if (data.downloadUrl) window.open(data.downloadUrl, '_blank');
+      else showToast('ダウンロードURLの取得に失敗しました', 'error');
+    } catch {
+      showToast('エラーが発生しました', 'error');
+    }
+  }
+
+  function showAddFolderInput() {
+    document.getElementById('folder-inline-input-wrap').style.display = '';
+    document.getElementById('folder-inline-input').value = '';
+    document.getElementById('folder-inline-input').focus();
+  }
+  function cancelAddFolder() {
+    document.getElementById('folder-inline-input-wrap').style.display = 'none';
+  }
+  async function submitAddFolder() {
+    const name = document.getElementById('folder-inline-input').value.trim();
     if (!name) return;
-    await api('POST', '/documents/folders', { name });
-    loadDocuments();
+    const body = { name };
+    if (_currentFolderId) {
+      const f = _folderMap[_currentFolderId];
+      body.parentFolderId = _currentFolderId;
+      body.parentPath = f ? f.path : '/';
+    }
+    try {
+      await api('POST', '/documents/folders', body);
+      cancelAddFolder();
+      showToast('フォルダを作成しました', 'success');
+      loadDocuments();
+    } catch {
+      showToast('フォルダ作成に失敗しました', 'error');
+    }
   }
 
-  async function uploadFile() {
-    alert('ファイルをアップロードするには、まずフォルダを開いてください。');
+  function showUploadPanel() {
+    document.getElementById('file-input').click();
   }
 
-  async function viewFolder(folderId, folderName) {
-    const data = await api('GET', `/documents/folders/${folderId}/files`);
-    const files = data.files || [];
-    const fileList = files.map(f => `• ${f.name} (${f.status})`).join('\n') || 'ファイルなし';
-    alert(`📁 ${folderName}\n\n${fileList}`);
+  async function handleFileSelected(inputEl) {
+    const file = inputEl.files[0];
+    if (!file || !_currentFolderId) return;
+    inputEl.value = '';
+
+    let uploadData;
+    try {
+      uploadData = await api('POST', `/documents/folders/${_currentFolderId}/files/upload-url`, {
+        name: file.name, contentType: file.type || 'application/octet-stream', size: file.size
+      });
+    } catch {
+      showToast('アップロードURLの取得に失敗しました', 'error');
+      return;
+    }
+
+    const progressWrap  = document.getElementById('upload-progress');
+    const progressBar   = document.getElementById('progress-bar');
+    const progressLabel = document.getElementById('progress-label');
+    progressWrap.style.display = '';
+    progressBar.style.width = '0%';
+    progressLabel.textContent = `${file.name} をアップロード中...`;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadData.uploadUrl);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round(e.loaded / e.total * 100);
+        progressBar.style.width = pct + '%';
+        progressLabel.textContent = `${file.name} — ${pct}%`;
+      }
+    };
+
+    xhr.onload = () => {
+      progressWrap.style.display = 'none';
+      if (xhr.status >= 200 && xhr.status < 300) {
+        showToast(`${file.name} をアップロードしました`, 'success');
+        loadFiles(_currentFolderId);
+      } else {
+        showToast('アップロードに失敗しました', 'error');
+      }
+    };
+    xhr.onerror = () => {
+      progressWrap.style.display = 'none';
+      showToast('アップロードエラー', 'error');
+    };
+
+    xhr.send(file);
   }
 
   // ===== Users (Admin) =====
