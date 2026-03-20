@@ -403,11 +403,11 @@ tr:hover td { background: #fafbfc; }
       <h2>ログイン</h2>
       <p>メールアドレスとパスワードを入力してください</p>
       <div class="form-group">
-        <label>メールアドレス</label>
+        <label for="email">メールアドレス</label>
         <input type="email" id="email" placeholder="user@example.com" />
       </div>
       <div class="form-group">
-        <label>パスワード</label>
+        <label for="password">パスワード</label>
         <input type="password" id="password" placeholder="••••••••" />
       </div>
       <button class="btn btn-primary btn-full" id="login-btn" onclick="login()">ログイン</button>
@@ -644,7 +644,7 @@ tr:hover td { background: #fafbfc; }
     currentUser = user;
     idToken = token;
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
+    document.getElementById('app').style.display = 'flex';
     if (user.role === 'admin') {
       document.getElementById('nav-users').style.display = '';
     }
