@@ -957,6 +957,7 @@ tr:hover td { background: #fafbfc; }
     };
     if (body) opts.body = JSON.stringify(body);
     const resp = await fetch(url, opts);
+    if (!resp.ok) return Promise.reject(new Error(`HTTP ${resp.status}`));
     return resp.json().catch(() => ({}));
   }
 
@@ -965,18 +966,18 @@ tr:hover td { background: #fafbfc; }
   async function loadDashboard() {
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    const today = now.toISOString().slice(0, 10);
+    const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
     // 今月スケジュール数 + 直近スケジュール
     api('GET', `/schedules?month=${month}`).then(data => {
       document.getElementById('stat-events').textContent = data.count ?? '—';
-      const rows = (data.events || []).slice(0, 5).map(e => {
+      const rows = (data.events || []).slice(0, 5).map((e, i) => {
         const { date, time } = fromISO(e.startDatetime);
-        return `<div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #f1f5f9;">
-        <div style="width:8px;height:8px;border-radius:50%;background:${e.isPublic ? '#3b82f6' : '#f97316'};flex-shrink:0;"></div>
-        <div style="flex:1;font-size:0.875rem;">${escHtml(e.title)}</div>
-        <div style="font-size:0.78rem;color:var(--color-text-muted);">${date} ${time}</div>
-      </div>`;
+        return `<div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;${i>0?'border-top:1px solid #f1f5f9;':''}">
+    <div style="width:8px;height:8px;border-radius:50%;background:${e.isPublic ? '#3b82f6' : '#f97316'};flex-shrink:0;"></div>
+    <div style="flex:1;font-size:0.875rem;">${escHtml(e.title)}</div>
+    <div style="font-size:0.78rem;color:var(--color-text-muted);">${date} ${time}</div>
+  </div>`;
       }).join('');
       document.getElementById('recent-events').innerHTML = rows ||
         '<p style="color:var(--color-text-muted);padding:1rem 0;font-size:0.875rem;">スケジュールなし</p>';
