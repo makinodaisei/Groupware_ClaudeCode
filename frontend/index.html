@@ -756,7 +756,7 @@ tr:hover td { background: #fafbfc; }
     popup.classList.add('open');
 
     setTimeout(() => {
-      document.addEventListener('click', _dpOutsideClick, { once: true });
+      document.addEventListener('click', _dpOutsideClick);
     }, 0);
   }
 
@@ -768,14 +768,9 @@ tr:hover td { background: #fafbfc; }
 
   function _dpOutsideClick(e) {
     const popup = document.getElementById('datepicker-popup');
-    if (popup.contains(e.target)) {
-      // Clicked inside popup, re-add listener
-      setTimeout(() => {
-        document.addEventListener('click', _dpOutsideClick, { once: true });
-      }, 0);
-      return;
+    if (!popup.contains(e.target)) {
+      closeDatePicker();
     }
-    closeDatePicker();
   }
 
   function renderDpCalendar() {
