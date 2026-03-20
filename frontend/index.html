@@ -1538,8 +1538,8 @@ tr:hover td { background: #fafbfc; }
       <tr>
         <td>${escHtml(u.name)}</td>
         <td style="color:var(--color-text-muted);">${escHtml(u.email)}</td>
-        <td><span class="badge ${u.role === 'admin' ? 'badge-orange' : 'badge-blue'}">${u.role}</span></td>
-        <td><span class="badge ${u.enabled ? 'badge-green' : 'badge-gray'}">${u.status || (u.enabled ? '有効' : '無効')}</span></td>
+        <td><span class="badge ${u.role === 'admin' ? 'badge-orange' : 'badge-blue'}">${escHtml(u.role)}</span></td>
+        <td><span class="badge ${u.enabled ? 'badge-green' : 'badge-gray'}">${escHtml(u.status || (u.enabled ? '有効' : '無効'))}</span></td>
       </tr>`).join('');
       tbody.innerHTML = rows || '<tr><td colspan="4" style="color:var(--color-text-muted);text-align:center;padding:2rem;">ユーザーなし</td></tr>';
     } catch {
