@@ -585,6 +585,297 @@ tr:hover td { background: #fafbfc; }
 </div>
 
 <script>
+  // ===== Drawer =====
+  let _drawerOnSubmit = null;
+  let _drawerOnDelete = null;
+  let _pendingDeleteId = null;
+
+  function openDrawer(title, contentHTML, onSubmit, options = {}) {
+    document.getElementById('drawer-title').textContent = title;
+    document.getElementById('drawer-content').innerHTML = contentHTML;
+    document.getElementById('drawer-error').style.display = 'none';
+    document.getElementById('drawer-error').textContent = '';
+    document.getElementById('drawer-delete-zone').style.display = 'none';
+    document.getElementById('drawer-footer').style.display = options.hideFooter ? 'none' : '';
+
+    const submitBtn = document.getElementById('drawer-submit');
+    submitBtn.textContent = options.submitLabel || '保存';
+
+    // Remove previous delete trigger if any
+    const prevDel = document.querySelector('.delete-trigger');
+    if (prevDel) prevDel.remove();
+
+    if (options.deleteBtn) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger delete-trigger';
+      delBtn.style.marginRight = 'auto';
+      delBtn.textContent = '削除';
+      delBtn.onclick = showDeleteConfirm;
+      document.getElementById('drawer-footer').insertBefore(delBtn, document.getElementById('drawer-footer').firstChild);
+    }
+
+    _drawerOnSubmit = onSubmit;
+    _drawerOnDelete = options.onDelete || null;
+    _pendingDeleteId = options.deleteId || null;
+
+    document.getElementById('drawer-overlay').classList.add('open');
+    document.getElementById('drawer-panel').classList.add('open');
+    document.addEventListener('keydown', _escHandler);
+
+    // Initialize DatePickers and TimePickers after DOM update
+    requestAnimationFrame(() => {
+      document.querySelectorAll('[data-datepicker]').forEach(el => initDatePicker(el));
+      document.querySelectorAll('[data-timepicker]').forEach(el => fillTimeSelect(el, el.dataset.default || '09:00'));
+    });
+  }
+
+  function closeDrawer() {
+    document.getElementById('drawer-overlay').classList.remove('open');
+    document.getElementById('drawer-panel').classList.remove('open');
+    document.removeEventListener('keydown', _escHandler);
+    const delTrigger = document.querySelector('.delete-trigger');
+    if (delTrigger) delTrigger.remove();
+    _drawerOnSubmit = null;
+    _drawerOnDelete = null;
+    _pendingDeleteId = null;
+    closeDatePicker();
+  }
+
+  function handleOverlayClick(e) {
+    if (e.target === document.getElementById('drawer-overlay')) closeDrawer();
+  }
+
+  function _escHandler(e) { if (e.key === 'Escape') closeDrawer(); }
+
+  async function submitDrawer() {
+    if (!_drawerOnSubmit) return closeDrawer();
+    const btn = document.getElementById('drawer-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    const errEl = document.getElementById('drawer-error');
+    errEl.style.display = 'none';
+    try {
+      const formData = {};
+      document.querySelectorAll('#drawer-content [name]').forEach(el => {
+        if (el.type === 'radio') {
+          if (el.checked) formData[el.name] = el.value;
+        } else if (el.type === 'checkbox') {
+          formData[el.name] = el.checked;
+        } else {
+          formData[el.name] = el.value;
+        }
+      });
+      await _drawerOnSubmit(formData);
+      closeDrawer();
+      showToast('保存しました', 'success');
+    } catch (msg) {
+      errEl.textContent = (typeof msg === 'string') ? msg : (msg?.message || 'エラーが発生しました');
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '保存';
+    }
+  }
+
+  function showDeleteConfirm() {
+    document.getElementById('drawer-delete-zone').style.display = 'block';
+  }
+  function cancelDeleteEvent() {
+    document.getElementById('drawer-delete-zone').style.display = 'none';
+  }
+  async function executeDeleteEvent() {
+    if (!_drawerOnDelete) return;
+    try {
+      await _drawerOnDelete(_pendingDeleteId);
+      closeDrawer();
+      showToast('削除しました', 'info');
+    } catch (msg) {
+      const errEl = document.getElementById('drawer-error');
+      errEl.textContent = (typeof msg === 'string') ? msg : '削除に失敗しました';
+      errEl.style.display = 'block';
+    }
+  }
+
+  // ===== Toast =====
+  function showToast(message, type = 'info') {
+    const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `<span>${icons[type] || ''}</span><span>${escHtml(message)}</span>`;
+    document.getElementById('toast-container').appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('toast-out');
+      toast.addEventListener('animationend', () => toast.remove(), { once: true });
+    }, 3000);
+  }
+
+  // ===== 時刻セレクト（5分刻み） =====
+  function fillTimeSelect(el, defaultTime) {
+    const current = el.value || defaultTime || '09:00';
+    el.innerHTML = '';
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 5) {
+        const val = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = val;
+        if (val === current) opt.selected = true;
+        el.appendChild(opt);
+      }
+    }
+  }
+
+  // ===== DatePicker =====
+  let _dpTarget = null;
+  let _dpYear = 0;
+  let _dpMonth = 0;
+
+  function initDatePicker(inputEl) {
+    inputEl.readOnly = true;
+    inputEl.style.cursor = 'pointer';
+    // Remove existing listener before adding to avoid duplicates
+    inputEl.removeEventListener('click', inputEl._dpClickHandler);
+    inputEl._dpClickHandler = (e) => {
+      e.stopPropagation();
+      openDatePicker(inputEl);
+    };
+    inputEl.addEventListener('click', inputEl._dpClickHandler);
+  }
+
+  function openDatePicker(inputEl) {
+    _dpTarget = inputEl;
+    const val = inputEl.value;
+    const parsed = val ? new Date(val.replace(/\//g, '-')) : new Date();
+    _dpYear  = isNaN(parsed) ? new Date().getFullYear() : parsed.getFullYear();
+    _dpMonth = isNaN(parsed) ? new Date().getMonth()    : parsed.getMonth();
+    renderDpCalendar();
+
+    const popup = document.getElementById('datepicker-popup');
+    const rect = inputEl.getBoundingClientRect();
+    popup.style.top  = `${rect.bottom + 4}px`;
+    popup.style.left = `${Math.min(rect.left, window.innerWidth - 270)}px`;
+    popup.classList.add('open');
+
+    setTimeout(() => {
+      document.addEventListener('click', _dpOutsideClick, { once: true });
+    }, 0);
+  }
+
+  function closeDatePicker() {
+    document.getElementById('datepicker-popup').classList.remove('open');
+    document.removeEventListener('click', _dpOutsideClick);
+    _dpTarget = null;
+  }
+
+  function _dpOutsideClick(e) {
+    const popup = document.getElementById('datepicker-popup');
+    if (popup.contains(e.target)) {
+      // Clicked inside popup, re-add listener
+      setTimeout(() => {
+        document.addEventListener('click', _dpOutsideClick, { once: true });
+      }, 0);
+      return;
+    }
+    closeDatePicker();
+  }
+
+  function renderDpCalendar() {
+    const monthNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    document.getElementById('dp-title').textContent = `${_dpYear}年 ${monthNames[_dpMonth]}`;
+
+    const grid = document.getElementById('dp-grid');
+    while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+
+    const firstDay = new Date(_dpYear, _dpMonth, 1).getDay();
+    const daysInMonth = new Date(_dpYear, _dpMonth + 1, 0).getDate();
+    const today = new Date();
+    const selectedVal = _dpTarget ? _dpTarget.value : '';
+
+    for (let i = 0; i < firstDay; i++) {
+      const d = document.createElement('div');
+      d.className = 'dp-day blank';
+      grid.appendChild(d);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = document.createElement('div');
+      d.className = 'dp-day';
+      d.textContent = day;
+      const isToday = _dpYear === today.getFullYear() && _dpMonth === today.getMonth() && day === today.getDate();
+      const dateStr = `${_dpYear}/${String(_dpMonth+1).padStart(2,'0')}/${String(day).padStart(2,'0')}`;
+      if (isToday) d.classList.add('today');
+      if (selectedVal === dateStr) d.classList.add('selected');
+      d.onclick = (e) => {
+        e.stopPropagation();
+        if (_dpTarget) {
+          _dpTarget.value = dateStr;
+          _dpTarget.dispatchEvent(new Event('change'));
+        }
+        closeDatePicker();
+      };
+      grid.appendChild(d);
+    }
+  }
+
+  function dpPrevMonth() {
+    _dpMonth--;
+    if (_dpMonth < 0) { _dpMonth = 11; _dpYear--; }
+    renderDpCalendar();
+  }
+  function dpNextMonth() {
+    _dpMonth++;
+    if (_dpMonth > 11) { _dpMonth = 0; _dpYear++; }
+    renderDpCalendar();
+  }
+
+  // ===== ISO-8601 ユーティリティ =====
+  function toISO(dateStr, timeStr) {
+    // dateStr: 'YYYY/MM/DD', timeStr: 'HH:MM' → 'YYYY-MM-DDThh:mm:ss+09:00'
+    const d = dateStr.replace(/\//g, '-');
+    return `${d}T${timeStr}:00+09:00`;
+  }
+
+  function fromISO(isoStr) {
+    if (!isoStr) return { date: '', time: '09:00' };
+    const [datePart, rest] = isoStr.split('T');
+    const time = rest ? rest.slice(0, 5) : '09:00';
+    return { date: datePart.replace(/-/g, '/'), time };
+  }
+
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  // ===== Navigation (サイドバーベース) =====
+  function showSection(name) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.sidebar-icon[id^="nav-"]').forEach(b => b.classList.remove('active'));
+    document.getElementById('section-' + name).classList.add('active');
+    const navEl = document.getElementById('nav-' + name);
+    if (navEl) navEl.classList.add('active');
+
+    if (name === 'schedule')  renderCalendar();
+    if (name === 'facility')  loadFacilities();
+    if (name === 'documents') loadDocuments();
+    if (name === 'users')     loadUsers();
+    closeDatePicker();
+  }
+
+  // ===== TopBar ユーザーメニュー =====
+  function toggleUserMenu() {
+    document.getElementById('user-dropdown').classList.toggle('open');
+  }
+  document.addEventListener('click', (e) => {
+    const userEl = document.getElementById('topbar-user');
+    const menu = document.getElementById('user-dropdown');
+    if (menu && userEl && !userEl.contains(e.target)) {
+      menu.classList.remove('open');
+    }
+  });
+
   // ===== Configuration =====
   const CONFIG = {
     // Replace with actual values after SAM deploy
@@ -645,6 +936,8 @@ tr:hover td { background: #fafbfc; }
     idToken = token;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-name').textContent = user.name || user.email;
+    document.getElementById('user-avatar').textContent = (user.name || user.email).charAt(0).toUpperCase();
     if (user.role === 'admin') {
       document.getElementById('nav-users').style.display = '';
     }
@@ -657,6 +950,7 @@ tr:hover td { background: #fafbfc; }
     idToken = null;
     document.getElementById('app').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('user-dropdown').classList.remove('open');
   }
 
   // ===== API Helper =====
@@ -671,18 +965,6 @@ tr:hover td { background: #fafbfc; }
     return resp.json().catch(() => ({}));
   }
 
-  // ===== Navigation =====
-  function showSection(name) {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-    document.getElementById('section-' + name).classList.add('active');
-    document.getElementById('nav-' + name).classList.add('active');
-
-    if (name === 'schedule') renderCalendar();
-    if (name === 'facility') loadFacilities();
-    if (name === 'documents') loadDocuments();
-    if (name === 'users') loadUsers();
-  }
 
   // ===== Dashboard =====
   async function loadDashboard() {
