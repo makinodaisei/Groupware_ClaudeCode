@@ -1181,34 +1181,117 @@ tr:hover td { background: #fafbfc; }
 
   // ===== Facilities =====
   async function loadFacilities() {
+    const container = document.getElementById('facility-list');
+    container.innerHTML = '<div class="skeleton-row skeleton" style="width:100%;height:80px;border-radius:10px;margin-bottom:0.75rem;"></div>'.repeat(3);
+
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    let facilities = [];
     try {
       const data = await api('GET', '/facilities');
-      const html = (data.facilities || []).map(f => `
-        <div class="card" style="margin-bottom:1rem;">
-          <strong>${f.name}</strong> <span style="color:#718096; font-size:0.85rem;">収容: ${f.capacity}名 | ${f.location || '場所未設定'}</span>
-          <p style="color:#718096; font-size:0.85rem; margin-top:0.3rem;">${f.description || ''}</p>
-          <button class="btn btn-primary" style="margin-top:0.75rem; font-size:0.8rem;" onclick="reserveFacility('${f.facilityId}', '${f.name}')">予約する</button>
-        </div>`).join('');
-      document.getElementById('facility-list').innerHTML = html || '<p style="color:#a0aec0;">施設が登録されていません</p>';
-    } catch (e) {
-      document.getElementById('facility-list').innerHTML = '<p>読み込みエラー</p>';
+      facilities = data.facilities || [];
+    } catch {
+      container.innerHTML = '<p style="color:var(--color-text-muted);">施設情報の取得に失敗しました</p>';
+      return;
     }
+
+    if (!facilities.length) {
+      container.innerHTML = '<p style="color:var(--color-text-muted);">施設が登録されていません</p>';
+      return;
+    }
+
+    const reservationsList = await Promise.all(
+      facilities.map(f =>
+        api('GET', `/facilities/${f.facilityId}/reservations?date=${today}`)
+          .then(r => r.reservations || [])
+          .catch(() => [])
+      )
+    );
+
+    container.innerHTML = facilities.map((f, i) =>
+      renderFacilityCard(f, reservationsList[i])
+    ).join('');
   }
 
-  async function reserveFacility(facilityId, name) {
-    const title = prompt(`「${name}」の予約タイトル:`);
-    if (!title) return;
-    const start = prompt('開始日時 (例: 2026-03-15T10:00:00+09:00):');
-    const end = prompt('終了日時 (例: 2026-03-15T11:00:00+09:00):');
-    if (!start || !end) return;
-    const result = await api('POST', `/facilities/${facilityId}/reservations`, { title, startDatetime: start, endDatetime: end });
-    if (result.error === 'CONFLICT') {
-      alert('その時間帯は既に予約されています。別の時間を選択してください。');
-    } else if (result.reservationId) {
-      alert('予約が完了しました！');
-    } else {
-      alert('エラーが発生しました: ' + (result.message || 'Unknown'));
-    }
+  function renderFacilityCard(f, reservations) {
+    const timelineBlocks = reservations.map(r => {
+      if (!r.startDatetime || !r.endDatetime) return '';
+      const toMin = iso => {
+        const d = new Date(iso);
+        return d.getHours() * 60 + d.getMinutes();
+      };
+      const startMin = toMin(r.startDatetime);
+      const endMin   = toMin(r.endDatetime);
+      if (startMin >= 1080) return ''; // 18:00以降は非表示
+      const clampedEnd = Math.min(endMin, 1080);
+      const left  = Math.max(0, (startMin - 540)) / 540 * 100;
+      const width = (clampedEnd - Math.max(startMin, 540)) / 540 * 100;
+      if (width <= 0) return '';
+      return `<div class="timeline-block" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;" title="${escHtml(r.title || '')}"></div>`;
+    }).join('');
+
+    return `
+      <div class="facility-card">
+        <div class="facility-card-header">
+          <div>
+            <div class="facility-name">${escHtml(f.name)}</div>
+            <div class="facility-meta">収容: ${f.capacity}名 | ${escHtml(f.location || '場所未設定')}</div>
+          </div>
+          <button class="btn btn-primary" onclick="showReservationDrawer('${escHtml(f.facilityId)}', '${escHtml(f.name)}')">予約する</button>
+        </div>
+        ${f.description ? `<p style="font-size:0.82rem;color:var(--color-text-muted);margin-bottom:0.75rem;">${escHtml(f.description)}</p>` : ''}
+        <div class="timeline-wrap">
+          <div class="timeline-bar">${timelineBlocks}</div>
+          <div class="timeline-labels"><span>9:00</span><span>12:00</span><span>15:00</span><span>18:00</span></div>
+        </div>
+      </div>`;
+  }
+
+  function showReservationDrawer(facilityId, facilityName) {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}`;
+    openDrawer(`予約: ${facilityName}`, `
+      <div class="field">
+        <label>予約タイトル <span style="color:var(--color-danger)">*</span></label>
+        <input type="text" name="title" placeholder="例：プロジェクト会議"/>
+      </div>
+      <div class="field">
+        <label>開始</label>
+        <div class="field-row">
+          <div class="date-input-wrap">
+            <input type="text" name="startDate" data-datepicker value="${escHtml(dateStr)}"/>
+            <span class="date-input-icon">📅</span>
+          </div>
+          <select name="startTime" data-timepicker data-default="10:00"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>終了</label>
+        <div class="field-row">
+          <div class="date-input-wrap">
+            <input type="text" name="endDate" data-datepicker value="${escHtml(dateStr)}"/>
+            <span class="date-input-icon">📅</span>
+          </div>
+          <select name="endTime" data-timepicker data-default="11:00"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>メモ</label>
+        <textarea name="notes" placeholder="任意メモ..."></textarea>
+      </div>
+    `, async (fd) => {
+      if (!fd.title?.trim()) throw '予約タイトルを入力してください';
+      if (!fd.startDate || !fd.endDate) throw '日付を入力してください';
+      const start = toISO(fd.startDate, fd.startTime);
+      const end   = toISO(fd.endDate,   fd.endTime);
+      if (new Date(end) <= new Date(start)) throw '終了時刻は開始時刻より後にしてください';
+      const res = await api('POST', `/facilities/${facilityId}/reservations`, {
+        title: fd.title.trim(), startDatetime: start, endDatetime: end, notes: fd.notes || ''
+      });
+      if (res.error === 'CONFLICT') throw 'その時間帯は既に予約されています。別の時間を選択してください。';
+      if (res.error) throw res.message || 'エラーが発生しました';
+      loadFacilities();
+    });
   }
 
   // ===== Documents =====
