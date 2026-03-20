@@ -1057,11 +1057,11 @@ tr:hover td { background: #fafbfc; }
           cell.appendChild(chip);
         }
       });
-    }).catch(() => {});
+    }).catch(() => { showToast('スケジュールの取得に失敗しました', 'error'); });
   }
 
-  function prevMonth() { currentMonth.setMonth(currentMonth.getMonth() - 1); renderCalendar(); }
-  function nextMonth() { currentMonth.setMonth(currentMonth.getMonth() + 1); renderCalendar(); }
+  function prevMonth() { currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1); renderCalendar(); }
+  function nextMonth() { currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1); renderCalendar(); }
 
   function showAddEventDrawer(defaultDate = '') {
     const today = defaultDate || (() => {
@@ -1081,7 +1081,7 @@ tr:hover td { background: #fafbfc; }
         <label>開始</label>
         <div class="field-row">
           <div class="date-input-wrap">
-            <input type="text" name="startDate" data-datepicker value="${today}" placeholder="YYYY/MM/DD"/>
+            <input type="text" name="startDate" data-datepicker value="${escHtml(today)}" placeholder="YYYY/MM/DD"/>
             <span class="date-input-icon">📅</span>
           </div>
           <select name="startTime" data-timepicker data-default="09:00"></select>
@@ -1091,7 +1091,7 @@ tr:hover td { background: #fafbfc; }
         <label>終了</label>
         <div class="field-row">
           <div class="date-input-wrap">
-            <input type="text" name="endDate" data-datepicker value="${today}" placeholder="YYYY/MM/DD"/>
+            <input type="text" name="endDate" data-datepicker value="${escHtml(today)}" placeholder="YYYY/MM/DD"/>
             <span class="date-input-icon">📅</span>
           </div>
           <select name="endTime" data-timepicker data-default="10:00"></select>
@@ -1105,6 +1105,7 @@ tr:hover td { background: #fafbfc; }
       </div>
     `, async (fd) => {
       if (!fd.title?.trim()) throw 'タイトルを入力してください';
+      if (!fd.startDate || !fd.endDate) throw '日付を入力してください';
       const start = toISO(fd.startDate, fd.startTime);
       const end   = toISO(fd.endDate,   fd.endTime);
       if (new Date(end) <= new Date(start)) throw '終了時刻は開始時刻より後にしてください';
@@ -1114,12 +1115,6 @@ tr:hover td { background: #fafbfc; }
       });
       if (res.error) throw res.message || 'エラーが発生しました';
       renderCalendar();
-    });
-    requestAnimationFrame(() => {
-      document.querySelectorAll('[data-timepicker]').forEach(el => {
-        fillTimeSelect(el, el.dataset.default || '09:00');
-      });
-      document.querySelectorAll('[data-datepicker]').forEach(el => initDatePicker(el));
     });
   }
 
@@ -1139,7 +1134,7 @@ tr:hover td { background: #fafbfc; }
         <label>開始</label>
         <div class="field-row">
           <div class="date-input-wrap">
-            <input type="text" name="startDate" data-datepicker value="${start.date}"/>
+            <input type="text" name="startDate" data-datepicker value="${escHtml(start.date)}"/>
             <span class="date-input-icon">📅</span>
           </div>
           <select name="startTime" data-timepicker data-default="${start.time}"></select>
@@ -1149,7 +1144,7 @@ tr:hover td { background: #fafbfc; }
         <label>終了</label>
         <div class="field-row">
           <div class="date-input-wrap">
-            <input type="text" name="endDate" data-datepicker value="${end.date}"/>
+            <input type="text" name="endDate" data-datepicker value="${escHtml(end.date)}"/>
             <span class="date-input-icon">📅</span>
           </div>
           <select name="endTime" data-timepicker data-default="${end.time}"></select>
@@ -1163,6 +1158,7 @@ tr:hover td { background: #fafbfc; }
       </div>
     `, async (fd) => {
       if (!fd.title?.trim()) throw 'タイトルを入力してください';
+      if (!fd.startDate || !fd.endDate) throw '日付を入力してください';
       const startISO = toISO(fd.startDate, fd.startTime);
       const endISO   = toISO(fd.endDate,   fd.endTime);
       if (new Date(endISO) <= new Date(startISO)) throw '終了時刻は開始時刻より後にしてください';
@@ -1180,12 +1176,6 @@ tr:hover td { background: #fafbfc; }
         if (res && res.error) throw res.message || '削除に失敗しました';
         renderCalendar();
       }
-    });
-    requestAnimationFrame(() => {
-      document.querySelectorAll('[data-timepicker]').forEach(el => {
-        fillTimeSelect(el, el.dataset.default || '09:00');
-      });
-      document.querySelectorAll('[data-datepicker]').forEach(el => initDatePicker(el));
     });
   }
 
