@@ -1530,34 +1530,52 @@ tr:hover td { background: #fafbfc; }
 
   // ===== Users (Admin) =====
   async function loadUsers() {
+    const tbody = document.getElementById('user-list');
+    tbody.innerHTML = '<tr><td colspan="4"><div class="skeleton-row skeleton"></div></td></tr>';
     try {
       const data = await api('GET', '/users');
       const rows = (data.users || []).map(u => `
-        <tr>
-          <td>${u.name}</td>
-          <td>${u.email}</td>
-          <td><span class="badge ${u.role === 'admin' ? 'badge-orange' : 'badge-green'}">${u.role}</span></td>
-          <td><span class="badge ${u.enabled ? 'badge-green' : 'badge-orange'}">${u.status || (u.enabled ? '有効' : '無効')}</span></td>
-        </tr>`).join('');
-      document.getElementById('user-list').innerHTML = rows || '<tr><td colspan="4" style="text-align:center;">ユーザーなし</td></tr>';
-    } catch (e) {
-      document.getElementById('user-list').innerHTML = '<tr><td colspan="4">読み込みエラー</td></tr>';
+      <tr>
+        <td>${escHtml(u.name)}</td>
+        <td style="color:var(--color-text-muted);">${escHtml(u.email)}</td>
+        <td><span class="badge ${u.role === 'admin' ? 'badge-orange' : 'badge-blue'}">${u.role}</span></td>
+        <td><span class="badge ${u.enabled ? 'badge-green' : 'badge-gray'}">${u.status || (u.enabled ? '有効' : '無効')}</span></td>
+      </tr>`).join('');
+      tbody.innerHTML = rows || '<tr><td colspan="4" style="color:var(--color-text-muted);text-align:center;padding:2rem;">ユーザーなし</td></tr>';
+    } catch {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--color-text-muted);">読み込みエラー</td></tr>';
     }
   }
 
-  async function inviteUser() {
-    const email = prompt('招待するメールアドレス:');
-    if (!email) return;
-    const name = prompt('表示名:');
-    if (!name) return;
-    const role = confirm('管理者権限を付与しますか？') ? 'admin' : 'user';
-    const result = await api('POST', '/users', { email, name, role });
-    if (result.userId) {
-      alert(`ユーザー「${name}」を招待しました。招待メールが送信されます。`);
+  function showInviteUserDrawer() {
+    openDrawer('ユーザーを招待', `
+      <div class="field">
+        <label>メールアドレス <span style="color:var(--color-danger)">*</span></label>
+        <input type="email" name="email" placeholder="user@example.com"/>
+      </div>
+      <div class="field">
+        <label>表示名 <span style="color:var(--color-danger)">*</span></label>
+        <input type="text" name="name" placeholder="山田 太郎"/>
+      </div>
+      <div class="field">
+        <label>ロール</label>
+        <div style="display:flex;gap:1.5rem;margin-top:0.5rem;">
+          <label style="display:flex;align-items:center;gap:0.4rem;font-weight:normal;font-size:0.875rem;cursor:pointer;">
+            <input type="radio" name="role" value="user" checked/> 一般ユーザー
+          </label>
+          <label style="display:flex;align-items:center;gap:0.4rem;font-weight:normal;font-size:0.875rem;cursor:pointer;">
+            <input type="radio" name="role" value="admin"/> 管理者
+          </label>
+        </div>
+      </div>
+      <p style="font-size:0.78rem;color:var(--color-text-muted);margin-top:0.5rem;">招待メールが指定のアドレスに送信されます。</p>
+    `, async (fd) => {
+      if (!fd.email?.trim()) throw 'メールアドレスを入力してください';
+      if (!fd.name?.trim())  throw '表示名を入力してください';
+      const res = await api('POST', '/users', { email: fd.email.trim(), name: fd.name.trim(), role: fd.role || 'user' });
+      if (res.error) throw res.message || 'エラーが発生しました';
       loadUsers();
-    } else {
-      alert('エラー: ' + (result.message || 'Unknown'));
-    }
+    });
   }
 
   // ===== Init =====
