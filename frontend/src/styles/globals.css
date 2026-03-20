@@ -375,6 +375,171 @@ tr:hover td { background: #fafbfc; }
 }
 .dropzone:hover, .dropzone.drag-over { border-color: var(--color-primary); background: #eff6ff; color: var(--color-primary); }
 
+/* === ビュー切り替えトグル === */
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.view-toggle-btn {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.view-toggle-btn:hover { background: #f1f5f9; color: var(--color-text); }
+.view-toggle-btn.active { background: var(--color-primary); color: #fff; }
+
+/* === 週ビュー === */
+.week-view {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.week-header {
+  display: flex;
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.week-day-header {
+  flex: 1;
+  text-align: center;
+  padding: 0.6rem 0.25rem;
+  border-left: 1px solid var(--color-border);
+}
+.week-dow {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.week-date-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 0.2rem;
+  color: var(--color-text);
+}
+.week-date-badge.active {
+  background: var(--color-primary);
+  color: #fff;
+}
+.week-day-header.today .week-dow { color: var(--color-primary); }
+
+.week-body {
+  display: flex;
+  overflow-y: auto;
+  max-height: 620px;
+  position: relative;
+}
+.week-time-gutter {
+  flex-shrink: 0;
+  position: relative;
+  border-right: 1px solid var(--color-border);
+}
+.week-time-label {
+  position: absolute;
+  right: 8px;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  line-height: 1;
+}
+.week-cols {
+  flex: 1;
+  display: flex;
+  position: relative;
+}
+.week-day-col {
+  flex: 1;
+  position: relative;
+  border-left: 1px solid var(--color-border);
+  cursor: crosshair;
+  min-width: 0;
+}
+.week-day-col.today-col { background: #fffbeb; }
+.week-hour-line {
+  position: absolute;
+  left: 0; right: 0;
+  border-top: 1px solid var(--color-border);
+  pointer-events: none;
+}
+.week-half-line {
+  position: absolute;
+  left: 0; right: 0;
+  border-top: 1px dashed #e9ecef;
+  pointer-events: none;
+}
+
+/* Events */
+.week-event {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 0.72rem;
+  overflow: hidden;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  transition: box-shadow var(--transition-fast), filter var(--transition-fast);
+  z-index: 2;
+  user-select: none;
+}
+.week-event:hover { filter: brightness(1.1); box-shadow: 0 3px 8px rgba(0,0,0,0.25); }
+.week-event:active { cursor: grabbing; }
+.week-event-time { font-size: 0.63rem; opacity: 0.85; line-height: 1.2; }
+.week-event-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.week-event-loc { font-size: 0.63rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.week-event-drag {
+  background: var(--color-primary);
+  opacity: 0.65;
+  cursor: grabbing;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 20;
+}
+
+/* Current time indicator */
+.week-now-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: #ef4444;
+  pointer-events: none;
+  z-index: 5;
+}
+.week-now-dot {
+  position: absolute;
+  left: -5px;
+  top: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
 /* === レスポンシブ === */
 @media (max-width: 768px) {
   .login-left { display: none; }

@@ -5,20 +5,47 @@ import { useToast } from '../components/Toast';
 import Drawer from '../components/Drawer';
 import DatePicker from '../components/DatePicker';
 import TimeSelect from '../components/TimeSelect';
+import WeekView from '../components/WeekView';
 
 function todayStr() {
   const n = new Date();
   return `${n.getFullYear()}/${String(n.getMonth()+1).padStart(2,'0')}/${String(n.getDate()).padStart(2,'0')}`;
 }
 
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // Monday = 1
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function weekLabel(weekStart) {
+  const end = new Date(weekStart);
+  end.setDate(end.getDate() + 6);
+  const sy = weekStart.getFullYear(), sm = weekStart.getMonth() + 1, sd = weekStart.getDate();
+  const ey = end.getFullYear(), em = end.getMonth() + 1, ed = end.getDate();
+  if (sy === ey && sm === em) return `${sy}年${sm}月${sd}日〜${ed}日`;
+  if (sy === ey) return `${sy}年${sm}月${sd}日〜${em}月${ed}日`;
+  return `${sy}/${sm}/${sd}〜${ey}/${em}/${ed}`;
+}
+
 export default function Schedule() {
   const showToast = useToast();
+  const [view, setView] = useState('month'); // 'month' | 'week'
+
+  // Month view state
   const [currentMonth, setCurrentMonth] = useState(() => {
     const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1);
   });
+
+  // Week view state
+  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
+
   const [events, setEvents] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editEvent, setEditEvent] = useState(null); // null = add mode
+  const [editEvent, setEditEvent] = useState(null);
   const [form, setForm] = useState({ title: '', location: '', startDate: '', startTime: '09:00', endDate: '', endTime: '10:00', isPublic: true });
 
   const y = currentMonth.getFullYear();
@@ -27,21 +54,39 @@ export default function Schedule() {
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const today = new Date();
 
+  // Fetch events for current view range
   const loadEvents = useCallback(async () => {
-    const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
     try {
-      const data = await api('GET', `/schedules?month=${monthStr}`);
-      setEvents(data.events || []);
+      if (view === 'month') {
+        const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
+        const data = await api('GET', `/schedules?month=${monthStr}`);
+        setEvents(data.events || []);
+      } else {
+        // Fetch week: query by month(s) that overlap the week
+        const months = new Set();
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(weekStart);
+          d.setDate(d.getDate() + i);
+          months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+        }
+        const results = await Promise.all([...months].map(mo => api('GET', `/schedules?month=${mo}`)));
+        const all = results.flatMap(r => r.events || []);
+        // Deduplicate by eventId
+        const seen = new Set();
+        setEvents(all.filter(e => seen.has(e.eventId) ? false : (seen.add(e.eventId), true)));
+      }
     } catch {
       showToast('スケジュールの取得に失敗しました', 'error');
     }
-  }, [y, m, showToast]);
+  }, [view, y, m, weekStart, showToast]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
-  function openAddDrawer(dateStr) {
+  function openAddDrawer(dateStr, timeStr = '09:00') {
+    const endH = parseInt(timeStr.split(':')[0]) + 1;
+    const endTime = `${String(endH > 23 ? 23 : endH).padStart(2,'0')}:${timeStr.split(':')[1]}`;
     setEditEvent(null);
-    setForm({ title: '', location: '', startDate: dateStr, startTime: '09:00', endDate: dateStr, endTime: '10:00', isPublic: true });
+    setForm({ title: '', location: '', startDate: dateStr, startTime: timeStr, endDate: dateStr, endTime, isPublic: true });
     setDrawerOpen(true);
   }
 
@@ -78,7 +123,24 @@ export default function Schedule() {
     loadEvents();
   }
 
-  // Group events by day
+  async function handleEventMove(event, startISO, endISO) {
+    try {
+      const res = await api('PUT', `/schedules/${event.eventId}`, {
+        title: event.title,
+        location: event.location || '',
+        startDatetime: startISO,
+        endDatetime: endISO,
+        isPublic: !!event.isPublic,
+      });
+      if (res.error) throw res.message;
+      showToast('スケジュールを移動しました', 'success');
+      loadEvents();
+    } catch {
+      showToast('移動に失敗しました', 'error');
+    }
+  }
+
+  // Group events by day for month view
   const eventsByDay = {};
   events.forEach(e => {
     const day = parseInt(e.startDatetime?.slice(8, 10));
@@ -87,33 +149,71 @@ export default function Schedule() {
 
   return (
     <div>
+      {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        <button className="btn btn-secondary" onClick={() => setCurrentMonth(new Date(y, m-1, 1))}>◀</button>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 700, flex: 1 }}>{y}年 {m+1}月</h2>
-        <button className="btn btn-secondary" onClick={() => setCurrentMonth(new Date(y, m+1, 1))}>▶</button>
+        {view === 'month' ? (
+          <>
+            <button className="btn btn-secondary" onClick={() => setCurrentMonth(new Date(y, m-1, 1))}>◀</button>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, flex: 1 }}>{y}年 {m+1}月</h2>
+            <button className="btn btn-secondary" onClick={() => setCurrentMonth(new Date(y, m+1, 1))}>▶</button>
+          </>
+        ) : (
+          <>
+            <button className="btn btn-secondary" onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate()-7); return n; })}>◀</button>
+            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, flex: 1 }}>{weekLabel(weekStart)}</h2>
+            <button className="btn btn-secondary" onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate()+7); return n; })}>▶</button>
+          </>
+        )}
+
+        {/* View toggle */}
+        <div className="view-toggle">
+          <button
+            className={`view-toggle-btn${view === 'month' ? ' active' : ''}`}
+            onClick={() => setView('month')}
+          >月</button>
+          <button
+            className={`view-toggle-btn${view === 'week' ? ' active' : ''}`}
+            onClick={() => setView('week')}
+          >週</button>
+        </div>
+
         <button className="btn btn-primary" onClick={() => openAddDrawer(todayStr())}>＋ 追加</button>
       </div>
 
-      <div className="cal-grid">
-        {['日','月','火','水','木','金','土'].map(d => <div key={d} className="cal-head">{d}</div>)}
-        {Array.from({ length: firstDay }, (_, i) => <div key={`b${i}`} className="cal-cell blank" />)}
-        {Array.from({ length: daysInMonth }, (_, i) => {
-          const day = i + 1;
-          const isToday = y === today.getFullYear() && m === today.getMonth() && day === today.getDate();
-          const dateStr = `${y}/${String(m+1).padStart(2,'0')}/${String(day).padStart(2,'0')}`;
-          return (
-            <div key={day} className={`cal-cell${isToday ? ' today' : ''}`} onClick={() => openAddDrawer(dateStr)}>
-              <div className="cal-day-num">{day}</div>
-              {(eventsByDay[day] || []).map((e, ei) => (
-                <div key={e.eventId || ei} className="cal-event-chip" title={e.title}
-                  onClick={ev => { ev.stopPropagation(); openEditDrawer(e); }}>
-                  {e.title}
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
+      {/* Month view */}
+      {view === 'month' && (
+        <div className="cal-grid">
+          {['日','月','火','水','木','金','土'].map(d => <div key={d} className="cal-head">{d}</div>)}
+          {Array.from({ length: firstDay }, (_, i) => <div key={`b${i}`} className="cal-cell blank" />)}
+          {Array.from({ length: daysInMonth }, (_, i) => {
+            const day = i + 1;
+            const isToday = y === today.getFullYear() && m === today.getMonth() && day === today.getDate();
+            const dateStr = `${y}/${String(m+1).padStart(2,'0')}/${String(day).padStart(2,'0')}`;
+            return (
+              <div key={day} className={`cal-cell${isToday ? ' today' : ''}`} onClick={() => openAddDrawer(dateStr)}>
+                <div className="cal-day-num">{day}</div>
+                {(eventsByDay[day] || []).map((e, ei) => (
+                  <div key={e.eventId || ei} className="cal-event-chip" title={e.title}
+                    onClick={ev => { ev.stopPropagation(); openEditDrawer(e); }}>
+                    {e.title}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Week view */}
+      {view === 'week' && (
+        <WeekView
+          events={events}
+          weekStart={weekStart}
+          onSlotClick={(dateStr, timeStr) => openAddDrawer(dateStr, timeStr)}
+          onEventClick={openEditDrawer}
+          onEventMove={handleEventMove}
+        />
+      )}
 
       <Drawer
         isOpen={drawerOpen}
