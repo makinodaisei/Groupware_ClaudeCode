@@ -507,7 +507,7 @@ tr:hover td { background: #fafbfc; }
               <div class="breadcrumb" id="doc-breadcrumb">
                 <span class="breadcrumb-item" onclick="selectFolder(null)">ホーム</span>
                 <div class="breadcrumb-actions">
-                  <button class="btn btn-primary" style="font-size:0.78rem;" onclick="showUploadPanel()" id="upload-btn" disabled>⬆ アップロード</button>
+                  <button class="btn btn-primary" style="font-size:0.78rem;" onclick="showUploadPanel()" disabled>⬆ アップロード</button>
                 </div>
               </div>
               <div class="file-grid" id="file-grid">
@@ -1345,6 +1345,7 @@ tr:hover td { background: #fafbfc; }
       nodes.forEach(node => {
         const item = document.createElement('div');
         item.className = 'folder-item' + (node.folderId === _currentFolderId ? ' active' : '');
+        item.dataset.folderId = node.folderId;
         item.style.paddingLeft = `${0.4 + depth * 1}rem`;
         item.innerHTML = `<span class="folder-item-icon">${node.children.length ? '📂' : '📁'}</span><span style="overflow:hidden;text-overflow:ellipsis;">${escHtml(node.name)}</span>`;
         item.onclick = () => selectFolder(node.folderId);
@@ -1359,6 +1360,8 @@ tr:hover td { background: #fafbfc; }
     _currentFolderId = folderId;
     document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active'));
     if (folderId) {
+      const activeEl = document.querySelector(`.folder-item[data-folder-id="${folderId}"]`);
+      if (activeEl) activeEl.classList.add('active');
       const f = _folderMap[folderId];
       const pathParts = f ? (f.path || '/').split('/').filter(Boolean) : [];
       _currentFolderPath = pathParts.map((name, i) => {
