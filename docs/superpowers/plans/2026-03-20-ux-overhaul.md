@@ -1,0 +1,1828 @@
+# UX全面リニューアル Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** `frontend/index.html` を全面リライトし、`prompt()`/`alert()`/`confirm()` を完全排除して、スライドインドロワー・カレンダーピッカー・トースト通知・タイムライン等を備えたプロフェッショナルなUIに刷新する。
+
+**Architecture:** 単一 `frontend/index.html` ファイル内にインラインCSS（`<style>`）とインラインJS（`<script>`）をすべて記述する。共通UIコンポーネント（Drawer, Toast, DatePicker）を先に実装し、各セクションから呼び出す形で構成する。外部ライブラリは一切使用しない。
+
+**Tech Stack:** Vanilla HTML5 / CSS3 / JavaScript (ES2020) / AWS Cognito (既存ロジック継承) / AWS API Gateway REST API (既存エンドポイント継承)
+
+---
+
+## ファイル構成
+
+| ファイル | 変更種別 | 責務 |
+|---|---|---|
+| `frontend/index.html` | Modify (full rewrite) | アプリ全体。CSS・JS・HTMLすべてインライン |
+
+既存ファイルの保持すべき要素:
+- `CONFIG` オブジェクト（apiEndpoint, userPoolId, clientId）
+- `login()` 関数の本体（Cognito認証ロジック）
+- `api()` ヘルパー関数
+- デモモードのフォールバックロジック
+
+---
+
+## Task 1: アプリシェルとCSSデザインシステム
+
+**Files:**
+- Modify: `frontend/index.html`（HTMLとCSSを全面入れ替え）
+
+このタスクではHTML構造とCSSのみを書く。JSロジックは既存の `CONFIG`, `login()`, `api()` を移植するだけ。
+
+- [ ] **Step 1: 既存ファイルをバックアップコミット**
+
+```bash
+cd /c/Users/Makinodaisei/Desktop/claudecode/CCAWS/groupware
+git add frontend/index.html
+git commit -m "chore: snapshot current index.html before UX rewrite"
+```
+
+- [ ] **Step 2: 新しい `<style>` ブロックを書く（CSS変数とベーススタイル）**
+
+`frontend/index.html` の `<style>` を以下で完全置換する:
+
+```css
+/* === CSS変数 === */
+:root {
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-primary: #1d4ed8;
+  --color-primary-dark: #1e40af;
+  --color-topbar: #0f172a;
+  --color-sidebar: #0f172a;
+  --color-sidebar-border: #1e3a5f;
+  --color-sidebar-hover: #1e293b;
+  --color-sidebar-active-bg: #1e3a5f;
+  --color-sidebar-active: #60a5fa;
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.15);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --topbar-h: 48px;
+  --sidebar-w: 52px;
+  --transition-fast: 120ms ease;
+  --transition-mid: 200ms ease;
+}
+
+/* === リセット === */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif; background: var(--color-bg); color: var(--color-text); font-size: 14px; line-height: 1.5; }
+
+/* === ログイン画面 === */
+#login-screen {
+  display: flex; height: 100vh; overflow: hidden;
+}
+.login-left {
+  flex: 1; background: linear-gradient(145deg, #0f172a 0%, #1e3a5f 100%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; color: white;
+}
+.login-left-logo { font-size: 3rem; margin-bottom: 1rem; }
+.login-left-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+.login-left-sub { font-size: 0.85rem; opacity: 0.6; }
+.login-right {
+  width: 420px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: white; padding: 2rem;
+}
+.login-form { width: 100%; max-width: 320px; }
+.login-form h2 { font-size: 1.3rem; font-weight: 700; color: var(--color-text); margin-bottom: 0.25rem; }
+.login-form p { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1.5rem; }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.form-group input[type="email"],
+.form-group input[type="password"] {
+  width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  font-size: 0.95rem; background: var(--color-bg); color: var(--color-text); transition: border-color var(--transition-fast);
+}
+.form-group input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(29,78,216,0.12); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.55rem 1.2rem; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 0.875rem; font-weight: 600; transition: background var(--transition-fast), opacity var(--transition-fast); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-primary { background: var(--color-primary); color: white; }
+.btn-primary:hover:not(:disabled) { background: var(--color-primary-dark); }
+.btn-secondary { background: var(--color-bg); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+.btn-secondary:hover:not(:disabled) { background: #f1f5f9; }
+.btn-danger { background: #fef2f2; color: var(--color-danger); border: 1px solid #fecaca; }
+.btn-danger:hover:not(:disabled) { background: #fee2e2; }
+.btn-full { width: 100%; }
+.login-error { color: var(--color-danger); font-size: 0.82rem; margin-top: 0.75rem; display: none; }
+
+/* === アプリシェル === */
+#app { display: none; height: 100vh; flex-direction: column; }
+.topbar {
+  height: var(--topbar-h); background: var(--color-topbar); border-bottom: 1px solid #1e3a5f;
+  display: flex; align-items: center; padding: 0 1rem 0 0; flex-shrink: 0; position: relative; z-index: 50;
+}
+.topbar-logo {
+  width: var(--sidebar-w); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  font-size: 1.3rem;
+}
+.topbar-title { font-size: 0.95rem; font-weight: 700; color: white; }
+.topbar-spacer { flex: 1; }
+.topbar-user {
+  display: flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm); color: #cbd5e1; font-size: 0.82rem; position: relative;
+  transition: background var(--transition-fast);
+}
+.topbar-user:hover { background: rgba(255,255,255,0.08); }
+.topbar-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: white; font-weight: 700;
+}
+.topbar-dropdown {
+  position: absolute; top: calc(100% + 8px); right: 0; background: white; border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-md); min-width: 160px; z-index: 200; display: none;
+}
+.topbar-dropdown.open { display: block; }
+.topbar-dropdown-item {
+  padding: 0.65rem 1rem; font-size: 0.85rem; color: var(--color-text); cursor: pointer;
+  transition: background var(--transition-fast); display: flex; align-items: center; gap: 0.5rem;
+}
+.topbar-dropdown-item:hover { background: var(--color-bg); }
+.topbar-dropdown-item.danger { color: var(--color-danger); }
+
+.app-body { display: flex; flex: 1; overflow: hidden; }
+.sidebar {
+  width: var(--sidebar-w); background: var(--color-sidebar); border-right: 1px solid var(--color-sidebar-border);
+  display: flex; flex-direction: column; align-items: center; padding: 0.5rem 0; gap: 0.25rem; flex-shrink: 0; overflow: hidden;
+}
+.sidebar-icon {
+  width: 38px; height: 38px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: #64748b; font-size: 1rem;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  position: relative;
+}
+.sidebar-icon:hover { background: var(--color-sidebar-hover); color: #94a3b8; }
+.sidebar-icon.active { background: var(--color-sidebar-active-bg); color: var(--color-sidebar-active); }
+.sidebar-icon[title]:hover::after {
+  content: attr(title); position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%);
+  background: #1e293b; color: white; font-size: 0.75rem; padding: 0.3rem 0.6rem; border-radius: 4px;
+  white-space: nowrap; z-index: 300; pointer-events: none;
+}
+.sidebar-spacer { flex: 1; }
+
+.main-content { flex: 1; overflow-y: auto; padding: 1.5rem; }
+.main-inner { max-width: 1200px; margin: 0 auto; }
+
+/* === セクション切り替えアニメーション === */
+.section { display: none; }
+.section.active {
+  display: block;
+  animation: fadeSlideIn 150ms ease both;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* === カード === */
+.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 1.25rem; margin-bottom: 1.25rem; }
+.card-title { font-size: 0.875rem; font-weight: 700; color: var(--color-text); margin-bottom: 1rem; }
+
+/* === バッジ === */
+.badge { display: inline-flex; align-items: center; padding: 0.2rem 0.55rem; border-radius: 20px; font-size: 0.72rem; font-weight: 600; }
+.badge-blue   { background: #eff6ff; color: #1d4ed8; }
+.badge-green  { background: #f0fdf4; color: #15803d; }
+.badge-orange { background: #fff7ed; color: #c2410c; }
+.badge-gray   { background: #f1f5f9; color: #475569; }
+
+/* === テーブル === */
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th { background: var(--color-bg); text-align: left; padding: 0.6rem 0.8rem; font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--color-border); }
+td { padding: 0.75rem 0.8rem; border-bottom: 1px solid #f1f5f9; color: var(--color-text); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #fafbfc; }
+
+/* === スケルトンローディング === */
+.skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 4px; }
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.skeleton-row { height: 16px; margin: 0.5rem 0; border-radius: 4px; }
+
+/* === フォームスタイル（ドロワー内） === */
+.field { margin-bottom: 1rem; }
+.field label { display: block; font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+.field input[type="text"],
+.field input[type="email"],
+.field textarea,
+.field select {
+  width: 100%; padding: 0.55rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  font-size: 0.875rem; background: var(--color-bg); color: var(--color-text);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.field input:focus, .field textarea:focus, .field select:focus {
+  outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(29,78,216,0.1);
+}
+.field textarea { resize: vertical; min-height: 80px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.field-inline { display: flex; align-items: center; gap: 0.5rem; }
+
+/* === トグル === */
+.toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; background: #cbd5e1; border-radius: 11px; cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.toggle-slider::before {
+  content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px;
+  background: white; border-radius: 50%; transition: transform var(--transition-fast);
+}
+.toggle input:checked + .toggle-slider { background: var(--color-primary); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+/* === ドロワー === */
+#drawer-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 100;
+  pointer-events: none; transition: background var(--transition-mid);
+}
+#drawer-overlay.open { background: rgba(0,0,0,0.4); pointer-events: auto; }
+#drawer-panel {
+  position: fixed; top: 0; right: 0; height: 100vh; width: 480px; max-width: 95vw;
+  background: white; z-index: 101; display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform 200ms ease-out;
+  box-shadow: var(--shadow-lg);
+}
+#drawer-panel.open { transform: translateX(0); }
+#drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--color-border); flex-shrink: 0;
+}
+#drawer-title { font-size: 1rem; font-weight: 700; color: var(--color-text); }
+#drawer-close {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border: none; background: none; cursor: pointer; border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 1.1rem;
+  transition: background var(--transition-fast);
+}
+#drawer-close:hover { background: var(--color-bg); }
+#drawer-body { flex: 1; overflow-y: auto; padding: 1.25rem; }
+#drawer-error {
+  display: none; background: #fef2f2; color: var(--color-danger); border: 1px solid #fecaca;
+  border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; font-size: 0.82rem; margin-bottom: 1rem;
+}
+#drawer-footer {
+  display: flex; gap: 0.75rem; padding: 1rem 1.25rem; border-top: 1px solid var(--color-border); flex-shrink: 0;
+}
+#drawer-submit { flex: 1; }
+#drawer-delete-zone {
+  display: none; padding: 0.75rem; background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: var(--radius-sm); margin-bottom: 1rem;
+}
+#drawer-delete-zone p { font-size: 0.85rem; color: var(--color-danger); margin-bottom: 0.5rem; }
+#drawer-delete-zone .btn-row { display: flex; gap: 0.5rem; }
+
+/* === トースト === */
+#toast-container { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 500; display: flex; flex-direction: column; gap: 0.5rem; }
+.toast {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.75rem 1rem; border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+  font-size: 0.875rem; min-width: 220px; max-width: 360px;
+  animation: toastIn 250ms ease both;
+}
+.toast.toast-out { animation: toastOut 300ms ease forwards; }
+.toast-success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.toast-error   { background: #fef2f2; color: var(--color-danger); border: 1px solid #fecaca; }
+.toast-info    { background: #eff6ff; color: var(--color-primary); border: 1px solid #bfdbfe; }
+@keyframes toastIn  { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
+
+/* === カレンダーピッカー === */
+#datepicker-popup {
+  position: fixed; background: white; border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 200;
+  width: 260px; padding: 0.75rem; display: none;
+}
+#datepicker-popup.open { display: block; }
+.dp-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.dp-nav-btn {
+  width: 28px; height: 28px; border: none; background: none; cursor: pointer; border-radius: 4px;
+  color: var(--color-text-muted); font-size: 0.9rem; display: flex; align-items: center; justify-content: center;
+  transition: background var(--transition-fast);
+}
+.dp-nav-btn:hover { background: var(--color-bg); }
+.dp-title { font-size: 0.875rem; font-weight: 700; color: var(--color-text); }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+.dp-head { text-align: center; font-size: 0.68rem; font-weight: 700; color: var(--color-text-muted); padding: 0.2rem 0; }
+.dp-day {
+  text-align: center; padding: 0.3rem 0; font-size: 0.8rem; border-radius: 4px; cursor: pointer; color: var(--color-text);
+  transition: background var(--transition-fast);
+}
+.dp-day:hover { background: #eff6ff; color: var(--color-primary); }
+.dp-day.today { font-weight: 700; color: var(--color-primary); }
+.dp-day.selected { background: var(--color-primary); color: white; }
+.dp-day.blank { pointer-events: none; }
+.dp-day.other-month { color: #cbd5e1; }
+
+/* === 日付入力フィールド === */
+.date-input-wrap { position: relative; }
+.date-input-wrap input[type="text"] { padding-right: 2rem; cursor: pointer; }
+.date-input-icon {
+  position: absolute; right: 0.6rem; top: 50%; transform: translateY(-50%);
+  color: var(--color-text-muted); pointer-events: none; font-size: 0.85rem;
+}
+
+/* === スピナー === */
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.4); border-top-color: white;
+  border-radius: 50%; animation: spin 0.7s linear infinite;
+}
+.spinner-dark { border-color: rgba(0,0,0,0.15); border-top-color: var(--color-primary); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* === ダッシュボード統計カード === */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.stat-card { background: white; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; box-shadow: var(--shadow-sm); }
+.stat-card-icon { font-size: 1.4rem; margin-bottom: 0.5rem; }
+.stat-card-num { font-size: 2rem; font-weight: 700; color: var(--color-text); line-height: 1; }
+.stat-card-label { font-size: 0.78rem; color: var(--color-text-muted); margin-top: 0.25rem; }
+.stat-card-sub { font-size: 0.72rem; color: #10b981; margin-top: 0.3rem; }
+
+/* === カレンダー === */
+.cal-nav { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.cal-nav h3 { font-size: 1rem; font-weight: 700; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+.cal-head { background: var(--color-bg); text-align: center; padding: 0.4rem; font-size: 0.72rem; font-weight: 700; color: var(--color-text-muted); }
+.cal-cell { background: white; min-height: 90px; padding: 0.35rem; cursor: pointer; transition: background var(--transition-fast); }
+.cal-cell:hover { background: #f8fafc; }
+.cal-cell.blank { background: #fafbfc; cursor: default; pointer-events: none; }
+.cal-cell.today { background: #eff6ff; }
+.cal-day-num { font-size: 0.78rem; font-weight: 600; color: var(--color-text-muted); }
+.cal-cell.today .cal-day-num { color: var(--color-primary); font-weight: 700; }
+.cal-event-chip {
+  background: #dbeafe; color: #1e40af; border-radius: 3px; padding: 0.1rem 0.3rem;
+  font-size: 0.66rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 0.2rem; cursor: pointer; transition: background var(--transition-fast);
+}
+.cal-event-chip:hover { background: #bfdbfe; }
+
+/* === 施設タイムライン === */
+.facility-card { background: white; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 0.75rem; }
+.facility-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+.facility-name { font-size: 0.9rem; font-weight: 700; }
+.facility-meta { font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.1rem; }
+.timeline-wrap { position: relative; }
+.timeline-bar { height: 24px; background: #f0fdf4; border-radius: 4px; overflow: hidden; position: relative; border: 1px solid #bbf7d0; }
+.timeline-block { position: absolute; top: 0; height: 100%; background: #94a3b8; border-radius: 2px; }
+.timeline-labels { display: flex; justify-content: space-between; margin-top: 0.2rem; font-size: 0.65rem; color: var(--color-text-muted); }
+
+/* === 文書管理 === */
+.doc-layout { display: flex; gap: 0; background: white; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; min-height: 400px; }
+.folder-tree { width: 200px; flex-shrink: 0; border-right: 1px solid var(--color-border); background: var(--color-bg); padding: 0.75rem; overflow-y: auto; }
+.folder-tree-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.folder-tree-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+.folder-add-btn { background: none; border: none; cursor: pointer; color: var(--color-primary); font-size: 1rem; line-height: 1; padding: 0 0.2rem; }
+.folder-item { display: flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.4rem; border-radius: var(--radius-sm); cursor: pointer; color: var(--color-text); font-size: 0.8rem; white-space: nowrap; overflow: hidden; }
+.folder-item:hover { background: #e2e8f0; }
+.folder-item.active { background: #dbeafe; color: var(--color-primary); font-weight: 600; }
+.folder-item-icon { flex-shrink: 0; }
+.folder-inline-input { width: 100%; padding: 0.25rem 0.4rem; border: 1px solid var(--color-primary); border-radius: 4px; font-size: 0.8rem; margin-bottom: 0.25rem; }
+.file-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.breadcrumb { display: flex; align-items: center; gap: 0.35rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--color-border); font-size: 0.8rem; flex-shrink: 0; }
+.breadcrumb-item { color: var(--color-primary); cursor: pointer; }
+.breadcrumb-item:hover { text-decoration: underline; }
+.breadcrumb-sep { color: var(--color-border); }
+.breadcrumb-current { color: var(--color-text); font-weight: 600; }
+.breadcrumb-actions { margin-left: auto; }
+.file-grid { padding: 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem; overflow-y: auto; }
+.file-card {
+  background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  padding: 0.75rem 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  cursor: pointer; transition: border-color var(--transition-fast), background var(--transition-fast); text-align: center;
+}
+.file-card:hover { border-color: #93c5fd; background: #eff6ff; }
+.file-card-icon { font-size: 1.8rem; }
+.file-card-name { font-size: 0.72rem; color: var(--color-text); line-height: 1.3; word-break: break-all; }
+.file-card-size { font-size: 0.65rem; color: var(--color-text-muted); }
+.file-card-add { border-style: dashed; cursor: pointer; }
+.file-card-add:hover { border-color: var(--color-primary); background: #eff6ff; }
+
+/* === アップロードプログレス === */
+.upload-progress { padding: 1rem; border-top: 1px solid var(--color-border); }
+.progress-bar-wrap { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-bottom: 0.4rem; }
+.progress-bar { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 100ms linear; }
+.progress-label { font-size: 0.75rem; color: var(--color-text-muted); }
+
+/* === ドロップゾーン === */
+.dropzone {
+  border: 2px dashed var(--color-border); border-radius: var(--radius-md); padding: 2rem;
+  text-align: center; cursor: pointer; transition: border-color var(--transition-fast), background var(--transition-fast);
+  color: var(--color-text-muted); font-size: 0.875rem;
+}
+.dropzone:hover, .dropzone.drag-over { border-color: var(--color-primary); background: #eff6ff; color: var(--color-primary); }
+
+/* === レスポンシブ === */
+@media (max-width: 768px) {
+  .login-left { display: none; }
+  .login-right { width: 100%; }
+}
+```
+
+- [ ] **Step 3: 新しいHTMLボディ構造を書く（ログイン画面 + アプリシェル）**
+
+`<body>` の内容を以下で置換（JSスクリプトブロックはまだ既存のものを維持）:
+
+```html
+<!-- Login Screen -->
+<div id="login-screen">
+  <div class="login-left">
+    <div class="login-left-logo">🏢</div>
+    <div class="login-left-title">社内グループウェア</div>
+    <div class="login-left-sub">チームの情報を、ひとつの場所に</div>
+  </div>
+  <div class="login-right">
+    <div class="login-form">
+      <h2>ログイン</h2>
+      <p>メールアドレスとパスワードを入力してください</p>
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="email" placeholder="user@example.com" />
+      </div>
+      <div class="form-group">
+        <label>パスワード</label>
+        <input type="password" id="password" placeholder="••••••••" />
+      </div>
+      <button class="btn btn-primary btn-full" id="login-btn" onclick="login()">ログイン</button>
+      <p id="login-error" class="login-error"></p>
+    </div>
+  </div>
+</div>
+
+<!-- App Shell -->
+<div id="app">
+  <!-- TopBar -->
+  <div class="topbar">
+    <div class="topbar-logo">🏢</div>
+    <div class="topbar-title">社内グループウェア</div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-user" id="topbar-user" onclick="toggleUserMenu()">
+      <div class="topbar-avatar" id="user-avatar">-</div>
+      <span id="user-name">-</span>
+      <span>▾</span>
+      <div class="topbar-dropdown" id="user-dropdown">
+        <div class="topbar-dropdown-item danger" onclick="logout()">🚪 ログアウト</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-body">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-icon active" id="nav-dashboard" title="ダッシュボード" onclick="showSection('dashboard')">🏠</div>
+      <div class="sidebar-icon" id="nav-schedule" title="スケジュール" onclick="showSection('schedule')">📅</div>
+      <div class="sidebar-icon" id="nav-facility" title="施設予約" onclick="showSection('facility')">🏢</div>
+      <div class="sidebar-icon" id="nav-documents" title="文書管理" onclick="showSection('documents')">📁</div>
+      <div class="sidebar-icon" id="nav-users" title="ユーザー管理" onclick="showSection('users')" style="display:none;">👥</div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-icon" title="設定">⚙️</div>
+    </div>
+
+    <!-- Main -->
+    <div class="main-content">
+      <div class="main-inner">
+
+        <!-- Dashboard -->
+        <div id="section-dashboard" class="section active">
+          <div class="stat-grid">
+            <div class="stat-card"><div class="stat-card-icon">📅</div><div class="stat-card-num" id="stat-events">—</div><div class="stat-card-label">今月のスケジュール</div></div>
+            <div class="stat-card"><div class="stat-card-icon">🏢</div><div class="stat-card-num" id="stat-reservations">—</div><div class="stat-card-label">今日の施設予約</div></div>
+            <div class="stat-card"><div class="stat-card-icon">📁</div><div class="stat-card-num" id="stat-docs">—</div><div class="stat-card-label">文書フォルダ数</div></div>
+            <div class="stat-card"><div class="stat-card-icon">👥</div><div class="stat-card-num" id="stat-users">—</div><div class="stat-card-label">ユーザー数</div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">直近のスケジュール</div>
+            <div id="recent-events"><div class="skeleton-row skeleton" style="width:100%"></div><div class="skeleton-row skeleton" style="width:80%"></div><div class="skeleton-row skeleton" style="width:90%"></div></div>
+          </div>
+        </div>
+
+        <!-- Schedule -->
+        <div id="section-schedule" class="section">
+          <div class="card">
+            <div class="cal-nav">
+              <button class="btn btn-secondary" onclick="prevMonth()">◀</button>
+              <h3 id="cal-title"></h3>
+              <button class="btn btn-secondary" onclick="nextMonth()">▶</button>
+              <button class="btn btn-primary" style="margin-left:auto;" onclick="showAddEventDrawer()">＋ 追加</button>
+            </div>
+            <div class="cal-grid" id="calendar">
+              <div class="cal-head">日</div><div class="cal-head">月</div>
+              <div class="cal-head">火</div><div class="cal-head">水</div>
+              <div class="cal-head">木</div><div class="cal-head">金</div>
+              <div class="cal-head">土</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Facility -->
+        <div id="section-facility" class="section">
+          <div id="facility-list"></div>
+        </div>
+
+        <!-- Documents -->
+        <div id="section-documents" class="section">
+          <div class="doc-layout" id="doc-layout">
+            <div class="folder-tree">
+              <div class="folder-tree-header">
+                <span class="folder-tree-label">フォルダ</span>
+                <button class="folder-add-btn" title="新規フォルダ" onclick="showAddFolderInput()">＋</button>
+              </div>
+              <div id="folder-inline-input-wrap" style="display:none;">
+                <input class="folder-inline-input" id="folder-inline-input" placeholder="フォルダ名" />
+                <div style="display:flex;gap:0.3rem;">
+                  <button class="btn btn-primary" style="font-size:0.72rem;padding:0.2rem 0.5rem;" onclick="submitAddFolder()">作成</button>
+                  <button class="btn btn-secondary" style="font-size:0.72rem;padding:0.2rem 0.5rem;" onclick="cancelAddFolder()">取消</button>
+                </div>
+              </div>
+              <div id="folder-tree-list"></div>
+            </div>
+            <div class="file-area">
+              <div class="breadcrumb" id="doc-breadcrumb">
+                <span class="breadcrumb-item" onclick="selectFolder(null)">ホーム</span>
+                <div class="breadcrumb-actions">
+                  <button class="btn btn-primary" style="font-size:0.78rem;" onclick="showUploadPanel()" id="upload-btn" disabled>⬆ アップロード</button>
+                </div>
+              </div>
+              <div class="file-grid" id="file-grid">
+                <div style="color:var(--color-text-muted);font-size:0.85rem;padding:1rem;grid-column:1/-1;">フォルダを選択してください</div>
+              </div>
+              <div class="upload-progress" id="upload-progress" style="display:none;">
+                <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+                <div class="progress-label" id="progress-label">アップロード中...</div>
+              </div>
+            </div>
+          </div>
+          <input type="file" id="file-input" style="display:none;" onchange="handleFileSelected(this)"/>
+        </div>
+
+        <!-- Users (Admin) -->
+        <div id="section-users" class="section">
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+              <div class="card-title" style="margin:0;">ユーザー管理</div>
+              <button class="btn btn-primary" onclick="showInviteUserDrawer()">＋ ユーザー招待</button>
+            </div>
+            <table>
+              <thead><tr><th>名前</th><th>メール</th><th>ロール</th><th>ステータス</th></tr></thead>
+              <tbody id="user-list"><tr><td colspan="4"><div class="skeleton-row skeleton"></div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- .main-inner -->
+    </div><!-- .main-content -->
+  </div><!-- .app-body -->
+</div><!-- #app -->
+
+<!-- Drawer -->
+<div id="drawer-overlay" onclick="handleOverlayClick(event)">
+  <div id="drawer-panel">
+    <div id="drawer-header">
+      <span id="drawer-title"></span>
+      <button id="drawer-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div id="drawer-body">
+      <div id="drawer-error"></div>
+      <div id="drawer-delete-zone">
+        <p>⚠️ このイベントを削除しますか？この操作は取り消せません。</p>
+        <div class="btn-row">
+          <button class="btn btn-danger" onclick="executeDeleteEvent()">削除する</button>
+          <button class="btn btn-secondary" onclick="cancelDeleteEvent()">キャンセル</button>
+        </div>
+      </div>
+      <div id="drawer-content"></div>
+    </div>
+    <div id="drawer-footer">
+      <button class="btn btn-secondary" id="drawer-cancel" onclick="closeDrawer()">キャンセル</button>
+      <button class="btn btn-primary" id="drawer-submit" onclick="submitDrawer()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<!-- DatePicker Popup -->
+<div id="datepicker-popup">
+  <div class="dp-nav">
+    <button class="dp-nav-btn" onclick="dpPrevMonth()">◀</button>
+    <span class="dp-title" id="dp-title"></span>
+    <button class="dp-nav-btn" onclick="dpNextMonth()">▶</button>
+  </div>
+  <div class="dp-grid" id="dp-grid">
+    <div class="dp-head">日</div><div class="dp-head">月</div>
+    <div class="dp-head">火</div><div class="dp-head">水</div>
+    <div class="dp-head">木</div><div class="dp-head">金</div>
+    <div class="dp-head">土</div>
+  </div>
+</div>
+```
+
+- [ ] **Step 4: ブラウザで確認（ログイン画面の見た目）**
+
+ブラウザで `frontend/index.html` をファイルとして開く。確認項目:
+- ログイン画面が左（紺グラデーション）+ 右（フォーム）の2カラムで表示される
+- 768px未満にリサイズすると左パネルが消え、フォームのみになる
+- メールフォーカス時に青いフォーカスリングが表示される
+- ブラウザコンソールにエラーがない
+
+- [ ] **Step 5: コミット**
+
+```bash
+cd /c/Users/Makinodaisei/Desktop/claudecode/CCAWS/groupware
+git add frontend/index.html
+git commit -m "feat: add new app shell, CSS design system, and login layout"
+```
+
+---
+
+## Task 2: 共通UIコンポーネント（Drawer, Toast, DatePicker）
+
+**Files:**
+- Modify: `frontend/index.html`（`<script>` ブロックの冒頭に共通コンポーネントを追加）
+
+このタスクでは既存の `CONFIG`, `login()`, `api()`, `logout()` を残しつつ、新しい共通関数を追加する。
+
+- [ ] **Step 1: 既存の `<script>` ブロックを保持しながら冒頭に共通コンポーネントを追加**
+
+`<script>` の `const CONFIG = ...` の前に以下を挿入する:
+
+```javascript
+// ===== Drawer =====
+let _drawerOnSubmit = null;
+let _drawerOnDelete = null;
+let _pendingDeleteId = null;
+
+function openDrawer(title, contentHTML, onSubmit, options = {}) {
+  document.getElementById('drawer-title').textContent = title;
+  document.getElementById('drawer-content').innerHTML = contentHTML;
+  document.getElementById('drawer-error').style.display = 'none';
+  document.getElementById('drawer-error').textContent = '';
+  document.getElementById('drawer-delete-zone').style.display = 'none';
+  document.getElementById('drawer-footer').style.display = options.hideFooter ? 'none' : '';
+
+  const submitBtn = document.getElementById('drawer-submit');
+  submitBtn.textContent = options.submitLabel || '保存';
+  submitBtn.innerHTML = options.submitLabel || '保存';
+
+  if (options.deleteBtn) {
+    const delBtnWrap = document.createElement('button');
+    delBtnWrap.className = 'btn btn-danger';
+    delBtnWrap.style.marginRight = 'auto';
+    delBtnWrap.textContent = '削除';
+    delBtnWrap.onclick = showDeleteConfirm;
+    const footer = document.getElementById('drawer-footer');
+    if (!footer.querySelector('.delete-trigger')) {
+      delBtnWrap.classList.add('delete-trigger');
+      footer.insertBefore(delBtnWrap, footer.firstChild);
+    }
+  }
+
+  _drawerOnSubmit = onSubmit;
+  _drawerOnDelete = options.onDelete || null;
+  _pendingDeleteId = options.deleteId || null;
+
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('drawer-panel').classList.add('open');
+
+  // ESCキーで閉じる
+  document.addEventListener('keydown', _escHandler);
+
+  // DatePickerを初期化
+  document.querySelectorAll('[data-datepicker]').forEach(el => initDatePicker(el));
+
+  // 時刻セレクトを初期化
+  document.querySelectorAll('[data-timepicker]').forEach(el => fillTimeSelect(el));
+}
+
+function closeDrawer() {
+  document.getElementById('drawer-overlay').classList.remove('open');
+  document.getElementById('drawer-panel').classList.remove('open');
+  document.removeEventListener('keydown', _escHandler);
+  // 削除ボタンが動的に追加された場合、クリーンアップ
+  const delTrigger = document.querySelector('.delete-trigger');
+  if (delTrigger) delTrigger.remove();
+  _drawerOnSubmit = null;
+  _drawerOnDelete = null;
+  _pendingDeleteId = null;
+  closeDatePicker();
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('drawer-overlay')) closeDrawer();
+}
+
+function _escHandler(e) { if (e.key === 'Escape') closeDrawer(); }
+
+async function submitDrawer() {
+  if (!_drawerOnSubmit) return closeDrawer();
+  const btn = document.getElementById('drawer-submit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  const errEl = document.getElementById('drawer-error');
+  errEl.style.display = 'none';
+  try {
+    // フォームデータをオブジェクトとして収集
+    const formData = {};
+    document.querySelectorAll('#drawer-content [name]').forEach(el => {
+      if (el.type === 'checkbox' || el.type === 'radio') {
+        if (el.type === 'radio' && !el.checked) return;
+        formData[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+      } else {
+        formData[el.name] = el.value;
+      }
+    });
+    // トグルも収集
+    document.querySelectorAll('#drawer-content input[type="checkbox"]').forEach(el => {
+      if (el.name) formData[el.name] = el.checked;
+    });
+    await _drawerOnSubmit(formData);
+    closeDrawer();
+    showToast('保存しました', 'success');
+  } catch (msg) {
+    errEl.textContent = msg || 'エラーが発生しました';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '保存';
+  }
+}
+
+function showDeleteConfirm() {
+  document.getElementById('drawer-delete-zone').style.display = 'block';
+}
+function cancelDeleteEvent() {
+  document.getElementById('drawer-delete-zone').style.display = 'none';
+}
+async function executeDeleteEvent() {
+  if (!_drawerOnDelete) return;
+  try {
+    await _drawerOnDelete(_pendingDeleteId);
+    closeDrawer();
+    showToast('削除しました', 'info');
+  } catch (msg) {
+    const errEl = document.getElementById('drawer-error');
+    errEl.textContent = msg || '削除に失敗しました';
+    errEl.style.display = 'block';
+  }
+}
+
+// ===== Toast =====
+function showToast(message, type = 'info') {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `<span>${icons[type] || ''}</span><span>${message}</span>`;
+  document.getElementById('toast-container').appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('toast-out');
+    toast.addEventListener('animationend', () => toast.remove());
+  }, 3000);
+}
+
+// ===== 時刻セレクト（5分刻み） =====
+function fillTimeSelect(el, defaultTime = '09:00') {
+  el.innerHTML = '';
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 5) {
+      const val = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = val;
+      if (val === defaultTime) opt.selected = true;
+      el.appendChild(opt);
+    }
+  }
+}
+
+// ===== DatePicker =====
+let _dpTarget = null; // { inputEl, onChange }
+let _dpYear = 0;
+let _dpMonth = 0;
+
+function initDatePicker(inputEl) {
+  inputEl.readOnly = true;
+  inputEl.style.cursor = 'pointer';
+  inputEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openDatePicker(inputEl);
+  });
+}
+
+function openDatePicker(inputEl) {
+  const popup = document.getElementById('datepicker-popup');
+  _dpTarget = inputEl;
+
+  // 初期表示月を決定
+  const val = inputEl.value;
+  const parsed = val ? new Date(val.replace(/\//g, '-')) : new Date();
+  _dpYear  = parsed.getFullYear();
+  _dpMonth = parsed.getMonth();
+  renderDpCalendar();
+
+  // ポジション計算
+  const rect = inputEl.getBoundingClientRect();
+  popup.style.top  = `${rect.bottom + 4}px`;
+  popup.style.left = `${Math.min(rect.left, window.innerWidth - 270)}px`;
+  popup.classList.add('open');
+
+  // 外側クリックで閉じる
+  setTimeout(() => {
+    document.addEventListener('click', _dpOutsideClick);
+  }, 0);
+}
+
+function closeDatePicker() {
+  document.getElementById('datepicker-popup').classList.remove('open');
+  document.removeEventListener('click', _dpOutsideClick);
+  _dpTarget = null;
+}
+
+function _dpOutsideClick(e) {
+  const popup = document.getElementById('datepicker-popup');
+  if (!popup.contains(e.target)) closeDatePicker();
+}
+
+function renderDpCalendar() {
+  const monthNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  document.getElementById('dp-title').textContent = `${_dpYear}年 ${monthNames[_dpMonth]}`;
+
+  const grid = document.getElementById('dp-grid');
+  // ヘッダー7個を残してdayセルを削除
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+
+  const firstDay = new Date(_dpYear, _dpMonth, 1).getDay();
+  const daysInMonth = new Date(_dpYear, _dpMonth + 1, 0).getDate();
+  const today = new Date();
+  const selectedVal = _dpTarget ? _dpTarget.value : '';
+
+  for (let i = 0; i < firstDay; i++) {
+    const d = document.createElement('div');
+    d.className = 'dp-day blank';
+    grid.appendChild(d);
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = document.createElement('div');
+    d.className = 'dp-day';
+    d.textContent = day;
+    const isToday = _dpYear === today.getFullYear() && _dpMonth === today.getMonth() && day === today.getDate();
+    const dateStr = `${_dpYear}/${String(_dpMonth+1).padStart(2,'0')}/${String(day).padStart(2,'0')}`;
+    if (isToday) d.classList.add('today');
+    if (selectedVal === dateStr) d.classList.add('selected');
+    d.onclick = (e) => {
+      e.stopPropagation();
+      if (_dpTarget) {
+        _dpTarget.value = dateStr;
+        _dpTarget.dispatchEvent(new Event('change'));
+      }
+      closeDatePicker();
+    };
+    grid.appendChild(d);
+  }
+}
+
+function dpPrevMonth() {
+  _dpMonth--;
+  if (_dpMonth < 0) { _dpMonth = 11; _dpYear--; }
+  renderDpCalendar();
+}
+function dpNextMonth() {
+  _dpMonth++;
+  if (_dpMonth > 11) { _dpMonth = 0; _dpYear++; }
+  renderDpCalendar();
+}
+
+// ISO-8601変換ユーティリティ
+function toISO(dateStr, timeStr) {
+  // dateStr: 'YYYY/MM/DD', timeStr: 'HH:MM'
+  const d = dateStr.replace(/\//g, '-');
+  return `${d}T${timeStr}:00+09:00`;
+}
+
+function fromISO(isoStr) {
+  // 'YYYY-MM-DDTHH:MM:SS+09:00' → { date: 'YYYY/MM/DD', time: 'HH:MM' }
+  if (!isoStr) return { date: '', time: '09:00' };
+  const [datePart, rest] = isoStr.split('T');
+  const time = rest ? rest.slice(0, 5) : '09:00';
+  return { date: datePart.replace(/-/g, '/'), time };
+}
+
+// ===== Navigation (新しいサイドバーベース) =====
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.sidebar-icon[id^="nav-"]').forEach(b => b.classList.remove('active'));
+  document.getElementById('section-' + name).classList.add('active');
+  const navEl = document.getElementById('nav-' + name);
+  if (navEl) navEl.classList.add('active');
+
+  if (name === 'schedule')  renderCalendar();
+  if (name === 'facility')  loadFacilities();
+  if (name === 'documents') loadDocuments();
+  if (name === 'users')     loadUsers();
+  closeDatePicker();
+}
+
+// ===== TopBar ユーザーメニュー =====
+function toggleUserMenu() {
+  document.getElementById('user-dropdown').classList.toggle('open');
+}
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('user-dropdown');
+  if (menu && !document.getElementById('topbar-user').contains(e.target)) {
+    menu.classList.remove('open');
+  }
+});
+```
+
+- [ ] **Step 2: `showApp()` と `logout()` を新しいUIに対応させる**
+
+既存の `showApp()` を以下で置換:
+
+```javascript
+function showApp(user, token) {
+  currentUser = user;
+  idToken = token;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('user-name').textContent = user.name || user.email;
+  document.getElementById('user-avatar').textContent = (user.name || user.email).charAt(0).toUpperCase();
+  if (user.role === 'admin') {
+    document.getElementById('nav-users').style.display = '';
+  }
+  loadDashboard();
+  renderCalendar();
+}
+```
+
+既存の `logout()` を以下で置換:
+
+```javascript
+function logout() {
+  currentUser = null;
+  idToken = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('user-dropdown').classList.remove('open');
+}
+```
+
+既存の `showError()` を以下で置換:
+
+```javascript
+function showError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+```
+
+- [ ] **Step 3: ブラウザで確認（共通コンポーネント動作）**
+
+1. ログイン画面でEnterキー → `login()` が呼ばれる（デモモードでアプリ画面に遷移）
+2. TopBarのユーザー名をクリック → ドロップダウン表示
+3. ドロップダウンの「ログアウト」をクリック → ログイン画面に戻る
+4. コンソールで `showToast('テスト', 'success')` を実行 → 右下にトースト表示、3秒で消える
+5. コンソールで `openDrawer('テスト', '<p>本文</p>', null)` → ドロワーが右からスライドイン
+6. ESCキー または オーバーレイクリック → ドロワーが閉じる
+
+- [ ] **Step 4: コミット**
+
+```bash
+git add frontend/index.html
+git commit -m "feat: add Drawer, Toast, DatePicker, TimeSelect shared components"
+```
+
+---
+
+## Task 3: ダッシュボード（統計カード + 直近スケジュール）
+
+**Files:**
+- Modify: `frontend/index.html`（`loadDashboard()` を書き換え）
+
+- [ ] **Step 1: `loadDashboard()` を並列API呼び出しに書き換える**
+
+既存の `loadDashboard()` を以下で完全置換:
+
+```javascript
+async function loadDashboard() {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const today = now.toISOString().slice(0, 10);
+
+  // 今月スケジュール
+  api('GET', `/schedules?month=${month}`).then(data => {
+    document.getElementById('stat-events').textContent = data.count ?? '—';
+    const rows = (data.events || []).slice(0, 5).map(e => {
+      const { date, time } = fromISO(e.startDatetime);
+      return `<div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #f1f5f9;">
+        <div style="width:8px;height:8px;border-radius:50%;background:${e.isPublic ? '#3b82f6' : '#f97316'};flex-shrink:0;"></div>
+        <div style="flex:1;font-size:0.875rem;">${e.title}</div>
+        <div style="font-size:0.78rem;color:var(--color-text-muted);">${date} ${time}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('recent-events').innerHTML = rows ||
+      '<p style="color:var(--color-text-muted);padding:1rem 0;font-size:0.875rem;">スケジュールなし</p>';
+  }).catch(() => {
+    document.getElementById('stat-events').textContent = '—';
+    document.getElementById('recent-events').innerHTML = '<p style="color:var(--color-text-muted);">読み込みエラー</p>';
+  });
+
+  // 今日の施設予約数（施設一覧を取得してから各施設を並列取得）
+  api('GET', '/facilities').then(async data => {
+    const facilities = data.facilities || [];
+    const counts = await Promise.all(
+      facilities.map(f =>
+        api('GET', `/facilities/${f.facilityId}/reservations?date=${today}`)
+          .then(r => (r.reservations || []).length)
+          .catch(() => 0)
+      )
+    );
+    document.getElementById('stat-reservations').textContent = counts.reduce((a, b) => a + b, 0);
+  }).catch(() => { document.getElementById('stat-reservations').textContent = '—'; });
+
+  // 文書フォルダ数
+  api('GET', '/documents/folders').then(data => {
+    document.getElementById('stat-docs').textContent = (data.folders || []).length;
+  }).catch(() => { document.getElementById('stat-docs').textContent = '—'; });
+
+  // ユーザー数（adminのみAPIが成功する）
+  api('GET', '/users').then(data => {
+    document.getElementById('stat-users').textContent = (data.users || []).length;
+  }).catch(() => { document.getElementById('stat-users').textContent = '—'; });
+}
+```
+
+- [ ] **Step 2: ブラウザで確認**
+
+デモモードでログイン後、ダッシュボードを確認:
+- 4枚の統計カードにスケルトンが表示された後、API結果（またはエラー）で更新される
+- 直近スケジュールリストにドット + タイトル + 時刻が表示される
+- API接続がない場合は `—` 表示（クラッシュしない）
+
+- [ ] **Step 3: コミット**
+
+```bash
+git add frontend/index.html
+git commit -m "feat: complete dashboard stats with parallel API calls"
+```
+
+---
+
+## Task 4: スケジュール（カレンダー + イベント追加/編集/削除ドロワー）
+
+**Files:**
+- Modify: `frontend/index.html`（`renderCalendar()`, `showAddEventModal()` を書き換え）
+
+- [ ] **Step 1: `renderCalendar()` をドロワー対応に書き換える**
+
+既存の `renderCalendar()` を以下で置換:
+
+```javascript
+function renderCalendar() {
+  const y = currentMonth.getFullYear();
+  const m = currentMonth.getMonth();
+  document.getElementById('cal-title').textContent = `${y}年 ${m+1}月`;
+
+  const firstDay = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const today = new Date();
+
+  const grid = document.getElementById('calendar');
+  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
+
+  for (let i = 0; i < firstDay; i++) {
+    const c = document.createElement('div');
+    c.className = 'cal-cell blank';
+    grid.appendChild(c);
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const c = document.createElement('div');
+    const isToday = y === today.getFullYear() && m === today.getMonth() && d === today.getDate();
+    c.className = 'cal-cell' + (isToday ? ' today' : '');
+    const dateStr = `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')}`;
+    c.innerHTML = `<div class="cal-day-num">${d}</div>`;
+    c.onclick = () => showAddEventDrawer(dateStr);
+    grid.appendChild(c);
+  }
+
+  const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
+  api('GET', `/schedules?month=${monthStr}`).then(data => {
+    (data.events || []).forEach(event => {
+      const day = parseInt(event.startDatetime?.slice(8, 10));
+      const idx = firstDay + day - 1 + 7;
+      const cell = grid.children[idx];
+      if (cell) {
+        const chip = document.createElement('div');
+        chip.className = 'cal-event-chip';
+        chip.textContent = event.title;
+        chip.title = event.title;
+        chip.onclick = (e) => {
+          e.stopPropagation();
+          showEditEventDrawer(event);
+        };
+        cell.appendChild(chip);
+      }
+    });
+  }).catch(() => {});
+}
+```
+
+- [ ] **Step 2: `showAddEventDrawer()` と `showEditEventDrawer()` を実装する**
+
+既存の `showAddEventModal()` を削除し、以下を追加:
+
+```javascript
+function showAddEventDrawer(defaultDate = '') {
+  const today = defaultDate || (() => {
+    const n = new Date();
+    return `${n.getFullYear()}/${String(n.getMonth()+1).padStart(2,'0')}/${String(n.getDate()).padStart(2,'0')}`;
+  })();
+  openDrawer('スケジュールを追加', `
+    <div class="field">
+      <label>タイトル <span style="color:var(--color-danger)">*</span></label>
+      <input type="text" name="title" placeholder="例：全体会議"/>
+    </div>
+    <div class="field">
+      <label>場所</label>
+      <input type="text" name="location" placeholder="例：会議室A"/>
+    </div>
+    <div class="field">
+      <label>開始</label>
+      <div class="field-row">
+        <div class="date-input-wrap">
+          <input type="text" name="startDate" data-datepicker value="${today}" placeholder="YYYY/MM/DD"/>
+          <span class="date-input-icon">📅</span>
+        </div>
+        <select name="startTime" data-timepicker data-default="09:00"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>終了</label>
+      <div class="field-row">
+        <div class="date-input-wrap">
+          <input type="text" name="endDate" data-datepicker value="${today}" placeholder="YYYY/MM/DD"/>
+          <span class="date-input-icon">📅</span>
+        </div>
+        <select name="endTime" data-timepicker data-default="10:00"></select>
+      </div>
+    </div>
+    <div class="field">
+      <div class="field-inline">
+        <label class="toggle"><input type="checkbox" name="isPublic" checked/><span class="toggle-slider"></span></label>
+        <span style="font-size:0.85rem;">公開する</span>
+      </div>
+    </div>
+  `, async (fd) => {
+    if (!fd.title?.trim()) throw 'タイトルを入力してください';
+    const start = toISO(fd.startDate, fd.startTime);
+    const end   = toISO(fd.endDate,   fd.endTime);
+    if (new Date(end) <= new Date(start)) throw '終了時刻は開始時刻より後にしてください';
+    const res = await api('POST', '/schedules', {
+      title: fd.title.trim(), location: fd.location || '',
+      startDatetime: start, endDatetime: end, isPublic: !!fd.isPublic
+    });
+    if (res.error) throw res.message || 'エラーが発生しました';
+    renderCalendar();
+  });
+  // data-timepickerを持つセレクトに時刻を生成
+  requestAnimationFrame(() => {
+    document.querySelectorAll('[data-timepicker]').forEach(el => {
+      fillTimeSelect(el, el.dataset.default || '09:00');
+    });
+  });
+}
+
+function showEditEventDrawer(event) {
+  const start = fromISO(event.startDatetime);
+  const end   = fromISO(event.endDatetime);
+  openDrawer('スケジュールを編集', `
+    <div class="field">
+      <label>タイトル <span style="color:var(--color-danger)">*</span></label>
+      <input type="text" name="title" value="${escHtml(event.title)}"/>
+    </div>
+    <div class="field">
+      <label>場所</label>
+      <input type="text" name="location" value="${escHtml(event.location||'')}"/>
+    </div>
+    <div class="field">
+      <label>開始</label>
+      <div class="field-row">
+        <div class="date-input-wrap">
+          <input type="text" name="startDate" data-datepicker value="${start.date}"/>
+          <span class="date-input-icon">📅</span>
+        </div>
+        <select name="startTime" data-timepicker data-default="${start.time}"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>終了</label>
+      <div class="field-row">
+        <div class="date-input-wrap">
+          <input type="text" name="endDate" data-datepicker value="${end.date}"/>
+          <span class="date-input-icon">📅</span>
+        </div>
+        <select name="endTime" data-timepicker data-default="${end.time}"></select>
+      </div>
+    </div>
+    <div class="field">
+      <div class="field-inline">
+        <label class="toggle"><input type="checkbox" name="isPublic" ${event.isPublic ? 'checked' : ''}/><span class="toggle-slider"></span></label>
+        <span style="font-size:0.85rem;">公開する</span>
+      </div>
+    </div>
+  `, async (fd) => {
+    if (!fd.title?.trim()) throw 'タイトルを入力してください';
+    const startISO = toISO(fd.startDate, fd.startTime);
+    const endISO   = toISO(fd.endDate,   fd.endTime);
+    if (new Date(endISO) <= new Date(startISO)) throw '終了時刻は開始時刻より後にしてください';
+    const res = await api('PUT', `/schedules/${event.eventId}`, {
+      title: fd.title.trim(), location: fd.location || '',
+      startDatetime: startISO, endDatetime: endISO, isPublic: !!fd.isPublic
+    });
+    if (res.error) throw res.message || 'エラーが発生しました';
+    renderCalendar();
+  }, {
+    deleteBtn: true,
+    deleteId: event.eventId,
+    onDelete: async (id) => {
+      const res = await api('DELETE', `/schedules/${id}`);
+      if (res && res.error) throw res.message || '削除に失敗しました';
+      renderCalendar();
+    }
+  });
+  requestAnimationFrame(() => {
+    document.querySelectorAll('[data-timepicker]').forEach(el => {
+      fillTimeSelect(el, el.dataset.default || '09:00');
+    });
+  });
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+```
+
+- [ ] **Step 3: ブラウザで確認**
+
+デモモードでスケジュール画面に移動:
+- カレンダーが表示される、今日がハイライトされる
+- 日付セルをクリック → 「スケジュールを追加」ドロワーが開く、日付が入力済み
+- カレンダーポップアップで日付を変更できる
+- 時刻セレクトに00:00〜23:55が5分刻みで並んでいる
+- タイトルを空で保存 → ドロワー内にエラー表示（`alert()` は出ない）
+- 「＋ 追加」ボタンでも同じドロワーが開く
+
+- [ ] **Step 4: コミット**
+
+```bash
+git add frontend/index.html
+git commit -m "feat: schedule calendar with drawer for add/edit/delete events"
+```
+
+---
+
+## Task 5: 施設予約（カード + タイムライン + 予約ドロワー）
+
+**Files:**
+- Modify: `frontend/index.html`（`loadFacilities()`, `reserveFacility()` を書き換え）
+
+- [ ] **Step 1: `loadFacilities()` をタイムライン付きカードに書き換える**
+
+既存の `loadFacilities()` と `reserveFacility()` を削除し、以下を追加:
+
+```javascript
+async function loadFacilities() {
+  const container = document.getElementById('facility-list');
+  container.innerHTML = '<div class="skeleton-row skeleton" style="width:100%;height:80px;border-radius:10px;margin-bottom:0.75rem;"></div>'.repeat(3);
+
+  const today = new Date().toISOString().slice(0, 10);
+  let facilities = [];
+  try {
+    const data = await api('GET', '/facilities');
+    facilities = data.facilities || [];
+  } catch {
+    container.innerHTML = '<p style="color:var(--color-text-muted);">施設情報の取得に失敗しました</p>';
+    return;
+  }
+
+  if (!facilities.length) {
+    container.innerHTML = '<p style="color:var(--color-text-muted);">施設が登録されていません</p>';
+    return;
+  }
+
+  // 各施設の当日予約を並列取得
+  const reservationsList = await Promise.all(
+    facilities.map(f =>
+      api('GET', `/facilities/${f.facilityId}/reservations?date=${today}`)
+        .then(r => r.reservations || [])
+        .catch(() => [])
+    )
+  );
+
+  container.innerHTML = facilities.map((f, i) =>
+    renderFacilityCard(f, reservationsList[i])
+  ).join('');
+}
+
+function renderFacilityCard(f, reservations) {
+  const timelineBlocks = reservations.map(r => {
+    if (!r.startDatetime || !r.endDatetime) return '';
+    const toMin = iso => {
+      const d = new Date(iso);
+      return d.getHours() * 60 + d.getMinutes();
+    };
+    const startMin = toMin(r.startDatetime);
+    const endMin   = toMin(r.endDatetime);
+    if (startMin >= 1080) return ''; // 18:00以降は非表示
+    const clampedEnd = Math.min(endMin, 1080);
+    const left  = Math.max(0, (startMin - 540)) / 540 * 100;
+    const width = (clampedEnd - Math.max(startMin, 540)) / 540 * 100;
+    if (width <= 0) return '';
+    return `<div class="timeline-block" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;" title="${r.title || ''}"></div>`;
+  }).join('');
+
+  return `
+    <div class="facility-card">
+      <div class="facility-card-header">
+        <div>
+          <div class="facility-name">${escHtml(f.name)}</div>
+          <div class="facility-meta">収容: ${f.capacity}名 | ${escHtml(f.location || '場所未設定')}</div>
+        </div>
+        <button class="btn btn-primary" onclick="showReservationDrawer('${f.facilityId}', '${escHtml(f.name)}')">予約する</button>
+      </div>
+      ${f.description ? `<p style="font-size:0.82rem;color:var(--color-text-muted);margin-bottom:0.75rem;">${escHtml(f.description)}</p>` : ''}
+      <div class="timeline-wrap">
+        <div class="timeline-bar">${timelineBlocks}</div>
+        <div class="timeline-labels"><span>9:00</span><span>12:00</span><span>15:00</span><span>18:00</span></div>
+      </div>
+    </div>`;
+}
+
+function showReservationDrawer(facilityId, facilityName) {
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}/${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getDate()).padStart(2,'0')}`;
+  openDrawer(`予約: ${facilityName}`, `
+    <div class="field">
+      <label>予約タイトル <span style="color:var(--color-danger)">*</span></label>
+      <input type="text" name="title" placeholder="例：プロジェクト会議"/>
+    </div>
+    <div class="field">
+      <label>開始</label>
+      <div class="field-row">
+        <div class="date-input-wrap">
+          <input type="text" name="startDate" data-datepicker value="${dateStr}"/>
+          <span class="date-input-icon">📅</span>
+        </div>
+        <select name="startTime" data-timepicker data-default="10:00"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>終了</label>
+      <div class="field-row">
+        <div class="date-input-wrap">
+          <input type="text" name="endDate" data-datepicker value="${dateStr}"/>
+          <span class="date-input-icon">📅</span>
+        </div>
+        <select name="endTime" data-timepicker data-default="11:00"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>メモ</label>
+      <textarea name="notes" placeholder="任意メモ..."></textarea>
+    </div>
+  `, async (fd) => {
+    if (!fd.title?.trim()) throw '予約タイトルを入力してください';
+    const start = toISO(fd.startDate, fd.startTime);
+    const end   = toISO(fd.endDate,   fd.endTime);
+    if (new Date(end) <= new Date(start)) throw '終了時刻は開始時刻より後にしてください';
+    const res = await api('POST', `/facilities/${facilityId}/reservations`, {
+      title: fd.title.trim(), startDatetime: start, endDatetime: end, notes: fd.notes || ''
+    });
+    if (res.error === 'CONFLICT') throw 'その時間帯は既に予約されています。別の時間を選択してください。';
+    if (res.error) throw res.message || 'エラーが発生しました';
+    loadFacilities(); // タイムライン更新
+  });
+  requestAnimationFrame(() => {
+    document.querySelectorAll('[data-timepicker]').forEach(el => {
+      fillTimeSelect(el, el.dataset.default || '10:00');
+    });
+  });
+}
+```
+
+- [ ] **Step 2: ブラウザで確認**
+
+施設予約画面を開く:
+- 施設カードにタイムラインバーが表示される（緑の背景）
+- 「予約する」ボタン → ドロワーが開く
+- 日付ピッカー・時刻セレクトが動作する
+- タイトル未入力で保存 → ドロワー内エラー（`alert()` なし）
+- 重複エラーのレスポンス `{error:'CONFLICT'}` をモックして確認: `api()` をオーバーライドしてテスト
+
+- [ ] **Step 3: コミット**
+
+```bash
+git add frontend/index.html
+git commit -m "feat: facility list with daily timeline and reservation drawer"
+```
+
+---
+
+## Task 6: 文書管理（フォルダツリー + ファイルグリッド + XHRアップロード）
+
+**Files:**
+- Modify: `frontend/index.html`（文書管理関連関数を全面書き換え）
+
+- [ ] **Step 1: フォルダツリー + ファイルグリッドのロジックを実装**
+
+既存の `loadDocuments()`, `createFolder()`, `uploadFile()`, `viewFolder()` を削除し、以下を追加:
+
+```javascript
+let _currentFolderId = null;
+let _currentFolderPath = []; // 配列要素: { name: string, folderId: string }
+let _folderMap = {}; // folderId → folderObject
+
+async function loadDocuments() {
+  _currentFolderId = null;
+  _currentFolderPath = [];
+  _folderMap = {};
+  try {
+    const data = await api('GET', '/documents/folders');
+    const folders = data.folders || [];
+    folders.forEach(f => { _folderMap[f.folderId] = f; });
+    renderFolderTree(folders);
+    renderBreadcrumb();
+    document.getElementById('file-grid').innerHTML =
+      '<div style="color:var(--color-text-muted);font-size:0.85rem;padding:1rem;grid-column:1/-1;">フォルダを選択してください</div>';
+    document.getElementById('upload-btn').disabled = true;
+  } catch {
+    document.getElementById('folder-tree-list').innerHTML = '<p style="color:var(--color-text-muted);font-size:0.82rem;">読み込みエラー</p>';
+  }
+}
+
+function buildTree(folders) {
+  // pathをもとにネスト構造を構築
+  // path例: "/全社共有", "/全社共有/議事録"
+  const roots = [];
+  const nodeMap = {};
+  folders.forEach(f => {
+    nodeMap[f.folderId] = { ...f, children: [] };
+  });
+  folders.forEach(f => {
+    const parts = (f.path || '/').split('/').filter(Boolean);
+    if (parts.length <= 1) {
+      roots.push(nodeMap[f.folderId]);
+    } else {
+      // 親フォルダを探す（parentFolderIdが設定されていれば使う）
+      if (f.parentFolderId && nodeMap[f.parentFolderId]) {
+        nodeMap[f.parentFolderId].children.push(nodeMap[f.folderId]);
+      } else {
+        roots.push(nodeMap[f.folderId]);
+      }
+    }
+  });
+  return roots;
+}
+
+function renderFolderTree(folders) {
+  const tree = buildTree(folders);
+  const listEl = document.getElementById('folder-tree-list');
+  listEl.innerHTML = '';
+  function renderNodes(nodes, depth) {
+    nodes.forEach(node => {
+      const item = document.createElement('div');
+      item.className = 'folder-item' + (node.folderId === _currentFolderId ? ' active' : '');
+      item.style.paddingLeft = `${0.4 + depth * 1}rem`;
+      item.innerHTML = `<span class="folder-item-icon">${node.children.length ? '📂' : '📁'}</span><span style="overflow:hidden;text-overflow:ellipsis;">${escHtml(node.name)}</span>`;
+      item.onclick = () => selectFolder(node.folderId);
+      listEl.appendChild(item);
+      if (node.children.length) renderNodes(node.children, depth + 1);
+    });
+  }
+  renderNodes(tree, 0);
+}
+
+function selectFolder(folderId) {
+  _currentFolderId = folderId;
+  // ツリーのアクティブ状態を更新
+  document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active'));
+  if (folderId) {
+    // パンくず更新: folderId の path を解析してフォルダID付き階層を構築
+    const f = _folderMap[folderId];
+    const pathParts = f ? (f.path || '/').split('/').filter(Boolean) : [];
+    // 各パス部分に対応するフォルダIDを探す（pathで逆引き）
+    _currentFolderPath = pathParts.map((name, i) => {
+      const partialPath = '/' + pathParts.slice(0, i + 1).join('/');
+      const match = Object.values(_folderMap).find(x => x.path === partialPath);
+      return { name, folderId: match ? match.folderId : null };
+    });
+  } else {
+    _currentFolderPath = [];
+  }
+  renderBreadcrumb();
+  document.getElementById('upload-btn').disabled = !folderId;
+  if (folderId) loadFiles(folderId);
+  else {
+    document.getElementById('file-grid').innerHTML =
+      '<div style="color:var(--color-text-muted);font-size:0.85rem;padding:1rem;grid-column:1/-1;">フォルダを選択してください</div>';
+  }
+}
+
+function renderBreadcrumb() {
+  const bc = document.getElementById('doc-breadcrumb');
+  // _currentFolderPath は { name, folderId } の配列
+  let html = `<span class="breadcrumb-item" onclick="selectFolder(null)">ホーム</span>`;
+  _currentFolderPath.forEach((crumb, i) => {
+    html += `<span class="breadcrumb-sep">›</span>`;
+    if (i === _currentFolderPath.length - 1) {
+      html += `<span class="breadcrumb-current">${escHtml(crumb.name)}</span>`;
+    } else {
+      const id = crumb.folderId ? `'${crumb.folderId}'` : 'null';
+      html += `<span class="breadcrumb-item" onclick="selectFolder(${id})">${escHtml(crumb.name)}</span>`;
+    }
+  });
+  html += `<div class="breadcrumb-actions"><button class="btn btn-primary" style="font-size:0.78rem;" onclick="showUploadPanel()" id="upload-btn" ${_currentFolderId ? '' : 'disabled'}>⬆ アップロード</button></div>`;
+  bc.innerHTML = html;
+}
+
+async function loadFiles(folderId) {
+  const grid = document.getElementById('file-grid');
+  grid.innerHTML = '<div class="skeleton-row skeleton" style="height:80px;border-radius:6px;"></div>'.repeat(3);
+  try {
+    const data = await api('GET', `/documents/folders/${folderId}/files`);
+    const files = data.files || [];
+    const fileCards = files.map(f => {
+      const icon = getFileIcon(f.name);
+      const size = formatSize(f.size);
+      return `<div class="file-card" onclick="downloadFile('${folderId}','${f.fileId}')">
+        <div class="file-card-icon">${icon}</div>
+        <div class="file-card-name">${escHtml(f.name)}</div>
+        <div class="file-card-size">${size}</div>
+      </div>`;
+    }).join('');
+    grid.innerHTML = fileCards +
+      `<div class="file-card file-card-add" onclick="document.getElementById('file-input').click()">
+        <div class="file-card-icon" style="font-size:1.2rem;color:var(--color-text-muted);">＋</div>
+        <div class="file-card-name" style="color:var(--color-text-muted);">追加</div>
+      </div>`;
+  } catch {
+    grid.innerHTML = '<p style="color:var(--color-text-muted);font-size:0.85rem;grid-column:1/-1;">読み込みエラー</p>';
+  }
+}
+
+function getFileIcon(name) {
+  const ext = (name || '').split('.').pop().toLowerCase();
+  const map = { pdf:'📄', xlsx:'📊', xls:'📊', docx:'📝', doc:'📝', pptx:'📋', ppt:'📋',
+                png:'🖼️', jpg:'🖼️', jpeg:'🖼️', gif:'🖼️', zip:'📦', txt:'📃' };
+  return map[ext] || '📎';
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024*1024) return `${(bytes/1024).toFixed(0)} KB`;
+  return `${(bytes/1024/1024).toFixed(1)} MB`;
+}
+
+async function downloadFile(folderId, fileId) {
+  try {
+    const data = await api('GET', `/documents/folders/${folderId}/files/${fileId}/download-url`);
+    if (data.downloadUrl) window.open(data.downloadUrl, '_blank');
+    else showToast('ダウンロードURLの取得に失敗しました', 'error');
+  } catch {
+    showToast('エラーが発生しました', 'error');
+  }
+}
+
+// フォルダ追加（インライン入力）
+function showAddFolderInput() {
+  document.getElementById('folder-inline-input-wrap').style.display = '';
+  document.getElementById('folder-inline-input').value = '';
+  document.getElementById('folder-inline-input').focus();
+}
+function cancelAddFolder() {
+  document.getElementById('folder-inline-input-wrap').style.display = 'none';
+}
+async function submitAddFolder() {
+  const name = document.getElementById('folder-inline-input').value.trim();
+  if (!name) return;
+  const body = { name };
+  if (_currentFolderId) {
+    const f = _folderMap[_currentFolderId];
+    body.parentFolderId = _currentFolderId;
+    body.parentPath = f ? f.path : '/';
+  }
+  try {
+    await api('POST', '/documents/folders', body);
+    cancelAddFolder();
+    showToast('フォルダを作成しました', 'success');
+    loadDocuments();
+  } catch {
+    showToast('フォルダ作成に失敗しました', 'error');
+  }
+}
+```
+
+- [ ] **Step 2: XHRファイルアップロードを実装**
+
+```javascript
+function showUploadPanel() {
+  document.getElementById('file-input').click();
+}
+
+async function handleFileSelected(inputEl) {
+  const file = inputEl.files[0];
+  if (!file || !_currentFolderId) return;
+  inputEl.value = '';
+
+  // 1. Presigned URL取得
+  let uploadData;
+  try {
+    uploadData = await api('POST', `/documents/folders/${_currentFolderId}/files/upload-url`, {
+      name: file.name, contentType: file.type || 'application/octet-stream', size: file.size
+    });
+  } catch {
+    showToast('アップロードURLの取得に失敗しました', 'error');
+    return;
+  }
+
+  // 2. XHR + progress でS3へPUT
+  const progressWrap = document.getElementById('upload-progress');
+  const progressBar  = document.getElementById('progress-bar');
+  const progressLabel = document.getElementById('progress-label');
+  progressWrap.style.display = '';
+  progressBar.style.width = '0%';
+  progressLabel.textContent = `${file.name} をアップロード中...`;
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('PUT', uploadData.uploadUrl);
+  xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      progressBar.style.width = pct + '%';
+      progressLabel.textContent = `${file.name} — ${pct}%`;
+    }
+  };
+
+  xhr.onload = () => {
+    progressWrap.style.display = 'none';
+    if (xhr.status >= 200 && xhr.status < 300) {
+      showToast(`${file.name} をアップロードしました`, 'success');
+      loadFiles(_currentFolderId);
+    } else {
+      showToast('アップロードに失敗しました', 'error');
+    }
+  };
+  xhr.onerror = () => {
+    progressWrap.style.display = 'none';
+    showToast('アップロードエラー', 'error');
+  };
+  xhr.send(file);
+}
+```
+
+- [ ] **Step 3: ブラウザで確認**
+
+文書管理画面を開く:
+- 左にフォルダツリーが表示される
+- フォルダをクリック → パンくず更新、ファイルグリッドが更新される
+- 「＋」ボタン → インライン入力フィールドが表示される
+- 「＋追加」カードをクリック → ファイル選択ダイアログが開く（実際のS3アップロードはAPI接続が必要）
+- `alert()` が一切表示されない
+
+- [ ] **Step 4: コミット**
+
+```bash
+git add frontend/index.html
+git commit -m "feat: document management with folder tree, file grid, and XHR upload"
+```
+
+---
+
+## Task 7: ユーザー管理（テーブル + 招待ドロワー）
+
+**Files:**
+- Modify: `frontend/index.html`（`loadUsers()`, `inviteUser()` を書き換え）
+
+- [ ] **Step 1: `loadUsers()` と `showInviteUserDrawer()` を実装**
+
+既存の `loadUsers()` と `inviteUser()` を削除し、以下を追加:
+
+```javascript
+async function loadUsers() {
+  const tbody = document.getElementById('user-list');
+  tbody.innerHTML = '<tr><td colspan="4"><div class="skeleton-row skeleton"></div></td></tr>';
+  try {
+    const data = await api('GET', '/users');
+    const rows = (data.users || []).map(u => `
+      <tr>
+        <td>${escHtml(u.name)}</td>
+        <td style="color:var(--color-text-muted);">${escHtml(u.email)}</td>
+        <td><span class="badge ${u.role === 'admin' ? 'badge-orange' : 'badge-blue'}">${u.role}</span></td>
+        <td><span class="badge ${u.enabled ? 'badge-green' : 'badge-gray'}">${u.status || (u.enabled ? '有効' : '無効')}</span></td>
+      </tr>`).join('');
+    tbody.innerHTML = rows || '<tr><td colspan="4" style="color:var(--color-text-muted);text-align:center;padding:2rem;">ユーザーなし</td></tr>';
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--color-text-muted);">読み込みエラー</td></tr>';
+  }
+}
+
+function showInviteUserDrawer() {
+  openDrawer('ユーザーを招待', `
+    <div class="field">
+      <label>メールアドレス <span style="color:var(--color-danger)">*</span></label>
+      <input type="email" name="email" placeholder="user@example.com"/>
+    </div>
+    <div class="field">
+      <label>表示名 <span style="color:var(--color-danger)">*</span></label>
+      <input type="text" name="name" placeholder="山田 太郎"/>
+    </div>
+    <div class="field">
+      <label>ロール</label>
+      <div style="display:flex;gap:1.5rem;margin-top:0.5rem;">
+        <label style="display:flex;align-items:center;gap:0.4rem;font-weight:normal;font-size:0.875rem;cursor:pointer;">
+          <input type="radio" name="role" value="user" checked/> 一般ユーザー
+        </label>
+        <label style="display:flex;align-items:center;gap:0.4rem;font-weight:normal;font-size:0.875rem;cursor:pointer;">
+          <input type="radio" name="role" value="admin"/> 管理者
+        </label>
+      </div>
+    </div>
+    <p style="font-size:0.78rem;color:var(--color-text-muted);margin-top:0.5rem;">招待メールが指定のアドレスに送信されます。</p>
+  `, async (fd) => {
+    if (!fd.email?.trim()) throw 'メールアドレスを入力してください';
+    if (!fd.name?.trim())  throw '表示名を入力してください';
+    const res = await api('POST', '/users', { email: fd.email.trim(), name: fd.name.trim(), role: fd.role || 'user' });
+    if (res.error) throw res.message || 'エラーが発生しました';
+    loadUsers();
+  });
+}
+```
+
+- [ ] **Step 2: ブラウザで確認**
+
+adminでログイン後（デモモードはロールが 'user' なのでサイドバーに👥は出ない。`showApp()` を一時的に `role:'admin'` で呼ぶか、コンソールで `showSection('users')` を実行）:
+- ユーザーテーブルにスケルトン → データ表示
+- 「＋ ユーザー招待」ボタン → ドロワーが開く
+- `prompt()` / `confirm()` が一切使われていない
+
+- [ ] **Step 3: コミット**
+
+```bash
+git add frontend/index.html
+git commit -m "feat: user management table and invite drawer"
+```
+
+---
+
+## Task 8: 最終確認・成功基準チェック・クリーンアップ
+
+**Files:**
+- Modify: `frontend/index.html`（残留する古い関数・イベントリスナーのクリーンアップ）
+
+- [ ] **Step 1: `prompt()`/`alert()`/`confirm()` が残っていないか確認**
+
+```bash
+grep -n "prompt\|alert\|confirm" frontend/index.html
+```
+
+期待: 出力なし（0件）
+
+- [ ] **Step 2: `.gitignore` に `.superpowers/` を追加**
+
+```bash
+echo ".superpowers/" >> .gitignore
+```
+
+- [ ] **Step 3: 全セクションの通し確認（ブラウザ手動テスト）**
+
+ブラウザで `frontend/index.html` を開き、以下を順に確認:
+
+1. **ログイン画面:** 左右2カラム表示、768px未満で左パネル非表示、Enterでsubmit
+2. **ナビゲーション:** サイドバーのアイコンをクリックでセクション切り替え、フェードイン確認
+3. **TopBarドロップダウン:** ユーザー名クリック→ドロップダウン表示、外側クリックで消える
+4. **ダッシュボード:** 4統計カード表示、直近スケジュールリスト
+5. **スケジュール:** カレンダー表示、日付クリックでドロワー開閉、ESCで閉じる
+6. **ドロワー:** カレンダーピッカーで日付変更可能、時刻セレクトに288オプション（00:00〜23:55）
+7. **施設予約:** タイムラインバー表示、予約ドロワーでCONFLICTエラーのインライン表示確認
+8. **文書管理:** フォルダツリー、パンくず、ファイルグリッド、＋追加カード
+9. **トースト:** コンソールで `showToast('テスト','success')` → 3秒で自動消去
+10. **デモモード:** API未接続でも画面がクラッシュしない
+
+- [ ] **Step 4: 最終コミット**
+
+```bash
+cd /c/Users/Makinodaisei/Desktop/claudecode/CCAWS/groupware
+git add frontend/index.html .gitignore
+git commit -m "feat: complete UX overhaul - remove all prompt/alert/confirm, add drawer/toast/datepicker"
+```
