@@ -1025,31 +1025,36 @@ tr:hover td { background: #fafbfc; }
     while (grid.children.length > 7) grid.removeChild(grid.lastChild);
 
     for (let i = 0; i < firstDay; i++) {
-      const blank = document.createElement('div');
-      blank.className = 'cal-day';
-      blank.style.background = '#f7fafc';
-      grid.appendChild(blank);
+      const c = document.createElement('div');
+      c.className = 'cal-cell blank';
+      grid.appendChild(c);
     }
     for (let d = 1; d <= daysInMonth; d++) {
-      const cell = document.createElement('div');
+      const c = document.createElement('div');
       const isToday = y === today.getFullYear() && m === today.getMonth() && d === today.getDate();
-      cell.className = 'cal-day' + (isToday ? ' today' : '');
-      cell.innerHTML = `<div class="day-num">${d}</div>`;
-      grid.appendChild(cell);
+      c.className = 'cal-cell' + (isToday ? ' today' : '');
+      const dateStr = `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')}`;
+      c.innerHTML = `<div class="cal-day-num">${d}</div>`;
+      c.onclick = () => showAddEventDrawer(dateStr);
+      grid.appendChild(c);
     }
 
-    // Load events for month
-    const monthStr = `${y}-${String(m + 1).padStart(2, '0')}`;
+    const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
     api('GET', `/schedules?month=${monthStr}`).then(data => {
       (data.events || []).forEach(event => {
         const day = parseInt(event.startDatetime?.slice(8, 10));
-        const idx = firstDay + day - 1 + 7; // +7 for headers
-        if (grid.children[idx]) {
-          const el = document.createElement('div');
-          el.className = 'cal-event';
-          el.title = event.title;
-          el.textContent = event.title;
-          grid.children[idx].appendChild(el);
+        const idx = firstDay + day - 1 + 7;
+        const cell = grid.children[idx];
+        if (cell) {
+          const chip = document.createElement('div');
+          chip.className = 'cal-event-chip';
+          chip.textContent = event.title;
+          chip.title = event.title;
+          chip.onclick = (e) => {
+            e.stopPropagation();
+            showEditEventDrawer(event);
+          };
+          cell.appendChild(chip);
         }
       });
     }).catch(() => {});
@@ -1058,15 +1063,130 @@ tr:hover td { background: #fafbfc; }
   function prevMonth() { currentMonth.setMonth(currentMonth.getMonth() - 1); renderCalendar(); }
   function nextMonth() { currentMonth.setMonth(currentMonth.getMonth() + 1); renderCalendar(); }
 
-  function showAddEventModal() {
-    const title = prompt('イベントタイトル:');
-    if (!title) return;
-    const start = prompt('開始日時 (例: 2026-03-15T10:00:00+09:00):');
-    const end = prompt('終了日時 (例: 2026-03-15T11:00:00+09:00):');
-    if (!start || !end) return;
-    api('POST', '/schedules', { title, startDatetime: start, endDatetime: end })
-      .then(() => renderCalendar())
-      .catch(e => alert('エラー: ' + e.message));
+  function showAddEventDrawer(defaultDate = '') {
+    const today = defaultDate || (() => {
+      const n = new Date();
+      return `${n.getFullYear()}/${String(n.getMonth()+1).padStart(2,'0')}/${String(n.getDate()).padStart(2,'0')}`;
+    })();
+    openDrawer('スケジュールを追加', `
+      <div class="field">
+        <label>タイトル <span style="color:var(--color-danger)">*</span></label>
+        <input type="text" name="title" placeholder="例：全体会議"/>
+      </div>
+      <div class="field">
+        <label>場所</label>
+        <input type="text" name="location" placeholder="例：会議室A"/>
+      </div>
+      <div class="field">
+        <label>開始</label>
+        <div class="field-row">
+          <div class="date-input-wrap">
+            <input type="text" name="startDate" data-datepicker value="${today}" placeholder="YYYY/MM/DD"/>
+            <span class="date-input-icon">📅</span>
+          </div>
+          <select name="startTime" data-timepicker data-default="09:00"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>終了</label>
+        <div class="field-row">
+          <div class="date-input-wrap">
+            <input type="text" name="endDate" data-datepicker value="${today}" placeholder="YYYY/MM/DD"/>
+            <span class="date-input-icon">📅</span>
+          </div>
+          <select name="endTime" data-timepicker data-default="10:00"></select>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-inline">
+          <label class="toggle"><input type="checkbox" name="isPublic" checked/><span class="toggle-slider"></span></label>
+          <span style="font-size:0.85rem;">公開する</span>
+        </div>
+      </div>
+    `, async (fd) => {
+      if (!fd.title?.trim()) throw 'タイトルを入力してください';
+      const start = toISO(fd.startDate, fd.startTime);
+      const end   = toISO(fd.endDate,   fd.endTime);
+      if (new Date(end) <= new Date(start)) throw '終了時刻は開始時刻より後にしてください';
+      const res = await api('POST', '/schedules', {
+        title: fd.title.trim(), location: fd.location || '',
+        startDatetime: start, endDatetime: end, isPublic: !!fd.isPublic
+      });
+      if (res.error) throw res.message || 'エラーが発生しました';
+      renderCalendar();
+    });
+    requestAnimationFrame(() => {
+      document.querySelectorAll('[data-timepicker]').forEach(el => {
+        fillTimeSelect(el, el.dataset.default || '09:00');
+      });
+      document.querySelectorAll('[data-datepicker]').forEach(el => initDatePicker(el));
+    });
+  }
+
+  function showEditEventDrawer(event) {
+    const start = fromISO(event.startDatetime);
+    const end   = fromISO(event.endDatetime);
+    openDrawer('スケジュールを編集', `
+      <div class="field">
+        <label>タイトル <span style="color:var(--color-danger)">*</span></label>
+        <input type="text" name="title" value="${escHtml(event.title)}"/>
+      </div>
+      <div class="field">
+        <label>場所</label>
+        <input type="text" name="location" value="${escHtml(event.location||'')}"/>
+      </div>
+      <div class="field">
+        <label>開始</label>
+        <div class="field-row">
+          <div class="date-input-wrap">
+            <input type="text" name="startDate" data-datepicker value="${start.date}"/>
+            <span class="date-input-icon">📅</span>
+          </div>
+          <select name="startTime" data-timepicker data-default="${start.time}"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>終了</label>
+        <div class="field-row">
+          <div class="date-input-wrap">
+            <input type="text" name="endDate" data-datepicker value="${end.date}"/>
+            <span class="date-input-icon">📅</span>
+          </div>
+          <select name="endTime" data-timepicker data-default="${end.time}"></select>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-inline">
+          <label class="toggle"><input type="checkbox" name="isPublic" ${event.isPublic ? 'checked' : ''}/><span class="toggle-slider"></span></label>
+          <span style="font-size:0.85rem;">公開する</span>
+        </div>
+      </div>
+    `, async (fd) => {
+      if (!fd.title?.trim()) throw 'タイトルを入力してください';
+      const startISO = toISO(fd.startDate, fd.startTime);
+      const endISO   = toISO(fd.endDate,   fd.endTime);
+      if (new Date(endISO) <= new Date(startISO)) throw '終了時刻は開始時刻より後にしてください';
+      const res = await api('PUT', `/schedules/${event.eventId}`, {
+        title: fd.title.trim(), location: fd.location || '',
+        startDatetime: startISO, endDatetime: endISO, isPublic: !!fd.isPublic
+      });
+      if (res.error) throw res.message || 'エラーが発生しました';
+      renderCalendar();
+    }, {
+      deleteBtn: true,
+      deleteId: event.eventId,
+      onDelete: async (id) => {
+        const res = await api('DELETE', `/schedules/${id}`);
+        if (res && res.error) throw res.message || '削除に失敗しました';
+        renderCalendar();
+      }
+    });
+    requestAnimationFrame(() => {
+      document.querySelectorAll('[data-timepicker]').forEach(el => {
+        fillTimeSelect(el, el.dataset.default || '09:00');
+      });
+      document.querySelectorAll('[data-datepicker]').forEach(el => initDatePicker(el));
+    });
   }
 
   // ===== Facilities =====
