@@ -8,6 +8,8 @@ import auth
 import response
 from boto3.dynamodb.conditions import Key
 from db_client import get_table
+from utils import now_iso, get_method_and_path
+from router import Router
 from validators import is_valid_iso_datetime, parse_body, require_fields, sanitize_string
 
 logger = logging.getLogger()
@@ -18,18 +20,9 @@ DATE_RANGE_INDEX = "DateRangeIndex"
 
 # ---------- Helpers ----------
 
-def _get_method_and_path(event: dict) -> tuple[str, str]:
-    ctx = event.get("requestContext", {}).get("http", {})
-    return ctx.get("method", ""), ctx.get("path", "")
-
-
 def _extract_event_id(path: str) -> str | None:
     match = re.search(r"/schedules/([^/]+)$", path)
     return match.group(1) if match else None
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _item_to_event(item: dict) -> dict:
@@ -94,7 +87,7 @@ def list_schedules(event: dict) -> dict:
 
 def get_schedule(event: dict) -> dict:
     user_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     event_id = _extract_event_id(path)
 
     table = get_table()
@@ -148,8 +141,8 @@ def create_schedule(event: dict) -> dict:
         "location": sanitize_string(body.get("location", ""), 500),
         "isPublic": is_public,
         "createdBy": user_id,
-        "createdAt": _now_iso(),
-        "updatedAt": _now_iso(),
+        "createdAt": now_iso(),
+        "updatedAt": now_iso(),
         # GSI1 for DateRangeIndex
         "gsi1pk": f"SCHEDULE#{year_month}",
         "gsi1sk": body["startDatetime"],
@@ -161,7 +154,7 @@ def create_schedule(event: dict) -> dict:
 
 def update_schedule(event: dict) -> dict:
     user_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     event_id = _extract_event_id(path)
     body = parse_body(event)
 
@@ -181,7 +174,7 @@ def update_schedule(event: dict) -> dict:
         return response.forbidden()
 
     update_expr_parts = ["updatedAt = :updatedAt"]
-    expr_values = {":updatedAt": _now_iso()}
+    expr_values = {":updatedAt": now_iso()}
 
     for field, attr in [("title", "title"), ("description", "description"),
                         ("location", "location"), ("allDay", "allDay")]:
@@ -218,7 +211,7 @@ def update_schedule(event: dict) -> dict:
 
 def delete_schedule(event: dict) -> dict:
     user_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     event_id = _extract_event_id(path)
 
     table = get_table()
@@ -241,33 +234,16 @@ def delete_schedule(event: dict) -> dict:
 
 # ---------- Router ----------
 
+_router = Router()
+_router.add("GET",    r".*/schedules$",          list_schedules)
+_router.add("POST",   r".*/schedules$",          create_schedule)
+_router.add("GET",    r".*/schedules/[^/]+$",    get_schedule)
+_router.add("PUT",    r".*/schedules/[^/]+$",    update_schedule)
+_router.add("DELETE", r".*/schedules/[^/]+$",    delete_schedule)
+
+
 def lambda_handler(event: dict, context) -> dict:
     logger.info("Schedules event: method=%s path=%s",
                 event.get("requestContext", {}).get("http", {}).get("method"),
                 event.get("requestContext", {}).get("http", {}).get("path"))
-
-    method, path = _get_method_and_path(event)
-
-    try:
-        if method == "OPTIONS":
-            return response.ok({})
-
-        if path.endswith("/schedules"):
-            if method == "GET":
-                return list_schedules(event)
-            if method == "POST":
-                return create_schedule(event)
-
-        if re.match(r".*/schedules/[^/]+$", path):
-            if method == "GET":
-                return get_schedule(event)
-            if method == "PUT":
-                return update_schedule(event)
-            if method == "DELETE":
-                return delete_schedule(event)
-
-        return response.not_found("Endpoint")
-
-    except Exception as e:
-        logger.exception("Unhandled error in schedules handler")
-        return response.server_error(str(e))
+    return _router.dispatch(event)
