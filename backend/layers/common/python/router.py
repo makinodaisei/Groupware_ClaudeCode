@@ -33,7 +33,7 @@ class Router:
 
         try:
             for route_method, pattern, handler in self._routes:
-                if route_method == method and re.match(pattern, path):
+                if route_method == method and re.fullmatch(pattern, path):
                     return handler(event)
             return response.not_found("Endpoint")
         except Exception as e:
