@@ -33,3 +33,16 @@ export function formatSize(bytes) {
     if (bytes < 1024*1024) return `${(bytes/1024).toFixed(0)} KB`;
     return `${(bytes/1024/1024).toFixed(1)} MB`;
   }
+
+// Returns today as 'YYYY/MM/DD' — matches the slash format used by DatePicker inputs.
+// Same format as fromISO's date return value.
+export function todayLocalStr() {
+  const n = new Date();
+  return `${n.getFullYear()}/${String(n.getMonth()+1).padStart(2,'0')}/${String(n.getDate()).padStart(2,'0')}`;
+}
+
+// Returns today as 'YYYY-MM-DD' — for API query parameters.
+export function todayApiStr() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
