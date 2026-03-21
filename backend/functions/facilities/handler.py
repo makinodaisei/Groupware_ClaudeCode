@@ -9,7 +9,7 @@ import auth
 import response
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
-from db_client import get_table
+from db_client import get_table, get_dynamodb_client
 from validators import is_valid_iso_datetime, parse_body, require_fields, sanitize_string
 
 logger = logging.getLogger()
@@ -31,6 +31,9 @@ def _extract_ids(path: str) -> tuple[str | None, str | None]:
     match = re.search(r"/facilities/([^/]+)/reservations/([^/]+)$", path)
     if match:
         return match.group(1), match.group(2)
+    match = re.search(r"/facilities/([^/]+)/reservations$", path)
+    if match:
+        return match.group(1), None
     match = re.search(r"/facilities/([^/]+)$", path)
     if match:
         return match.group(1), None
@@ -212,7 +215,7 @@ def create_reservation(event: dict) -> dict:
         "ttl": lock_expiry,
     }
 
-    dynamodb = table.meta.client
+    dynamodb = get_dynamodb_client()
     try:
         dynamodb.transact_write_items(
             TransactItems=[
