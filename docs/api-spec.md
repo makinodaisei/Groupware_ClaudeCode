@@ -115,7 +115,8 @@ auth: Bearer {CognitoIdToken}
 | フィールド | 型 | 必須 | 説明 |
 |----------|-----|------|------|
 | name | string | - | 表示名 |
-| role | string | - | ロール（adminのみ変更可） |
+| role | string | - | ロール（admin/editor/user、adminのみ変更可） |
+| enabled | boolean | - | アカウント有効フラグ（adminのみ変更可） |
 
 ### DELETE /users/{userId}
 
@@ -246,6 +247,45 @@ auth: Bearer {CognitoIdToken}
 | description | string | - | 説明（最大1000文字） |
 | capacity | number | - | 収容人数（デフォルト: 1） |
 | location | string | - | 場所（最大500文字） |
+
+### PUT /facilities/{facilityId}
+
+| 項目 | 内容 |
+|------|------|
+| 説明 | 施設情報更新 |
+| 認証 | 必須 |
+| 権限 | admin のみ |
+
+#### リクエストボディ (PUT /facilities/{facilityId})
+
+| フィールド | 型 | 必須 | 説明 |
+|----------|-----|------|------|
+| name | string | - | 施設名（最大200文字） |
+| description | string | - | 説明（最大1000文字） |
+| capacity | number | - | 収容人数 |
+| location | string | - | 場所（最大500文字） |
+
+※ `parentId` および `facilityType` は作成後変更不可（イミュータブル）
+
+#### レスポンス (PUT /facilities/{facilityId} 200 OK)
+
+更新後の施設オブジェクトを返す。
+
+### DELETE /facilities/{facilityId}
+
+| 項目 | 内容 |
+|------|------|
+| 説明 | 施設削除 |
+| 認証 | 必須 |
+| 権限 | admin のみ |
+| 成功時 | 204 No Content |
+
+#### エラーレスポンス (DELETE /facilities/{facilityId} 409)
+
+| 条件 | error コード | 説明 |
+|------|------------|------|
+| 子施設が存在する場合（facilityType: "group"） | CONFLICT | 子施設を先に削除してください |
+| 当該施設に予約が存在する場合 | CONFLICT | 予約を先に削除してください |
 
 ### GET /facilities/{facilityId}/reservations
 
