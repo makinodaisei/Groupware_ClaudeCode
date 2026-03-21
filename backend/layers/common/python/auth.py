@@ -43,3 +43,15 @@ def require_admin(event: dict) -> Optional[dict]:
     if not is_admin(event):
         return response.forbidden("Admin access required")
     return None
+
+
+def is_editor(event: dict) -> bool:
+    """Return True if user is in the editor Cognito group."""
+    return "editor" in get_groups(event)
+
+
+def require_editor_or_above(event: dict) -> Optional[dict]:
+    """Return 403 response if user is neither admin nor editor, else None."""
+    if not is_admin(event) and not is_editor(event):
+        return response.forbidden("Editor or admin access required")
+    return None
