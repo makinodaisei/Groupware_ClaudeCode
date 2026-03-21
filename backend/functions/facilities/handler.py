@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 
 import auth
 import response
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 from db_client import get_table, get_dynamodb_client
 from validators import is_valid_iso_datetime, parse_body, require_fields, sanitize_string
@@ -69,7 +69,6 @@ def _item_to_reservation(item: dict) -> dict:
 # ---------- Facility CRUD ----------
 
 def list_facilities(event: dict) -> dict:
-    from boto3.dynamodb.conditions import Attr
     table = get_table()
     resp = table.scan(
         FilterExpression=Attr("PK").begins_with("FACILITY#") & Attr("SK").eq("#METADATA"),
