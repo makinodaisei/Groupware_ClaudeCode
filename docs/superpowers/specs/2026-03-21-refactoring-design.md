@@ -136,7 +136,7 @@ The `api()` client in `lib/api.js` throws `Promise.reject(new Error(...))` on an
 | File | Location | Dead Check | Fix |
 |------|----------|-----------|-----|
 | `Facility.jsx` | `handleSubmit` | `if (res.error === 'CONFLICT')` and `if (res.error)` | Remove both checks. Catch rejected promise and map error message to user-facing message. |
-| `Schedule.jsx` | `loadEvents`, `handleSubmit`, `handleDelete` | Multiple `if (res.error ...)` checks | Remove all `res.error` checks; rely on thrown errors propagating to the catch block. |
+| `Schedule.jsx` | `loadEvents`, `handleSubmit`, `handleDelete`, `handleEventMove` | Multiple `if (res.error ...)` checks | Remove all `res.error` checks; rely on thrown errors propagating to the catch block. |
 | `Users.jsx` | API call handlers | `if (res.error ...)` | Remove the check; rely on thrown errors. |
 
 ### 3.5 Page Changes
