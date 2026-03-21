@@ -7,102 +7,99 @@
 
 ## 概要
 
-develop ブランチへの push を起点に、バックエンド (SAM) とフロントエンド (Vite→S3) を自動デプロイするワークフローを追加する。あわせてローカルから1コマンドでデプロイできるシェルスクリプトを用意する。
+`deploy-dev.yml` は既に存在しバックエンド (SAM) デプロイは実装済み。
+今回の変更:
+1. 認証を OIDC → アクセスキー方式に切り替える（`AWS_DEPLOY_ROLE_ARN` 未設定のため）
+2. フロントエンド (Vite→S3) デプロイ job を追加する
+3. ローカル用デプロイスクリプト `deploy-dev.sh` を新規作成する
 
 ---
 
-## ファイル構成
+## ファイル変更
 
 ```
-.github/workflows/deploy-dev.yml   # 新規: dev 自動デプロイワークフロー
-deploy-dev.sh                      # 新規: ローカル用デプロイスクリプト
+.github/workflows/deploy-dev.yml   # 既存を修正
+deploy-dev.sh                      # 新規作成
 ```
-
-既存ファイルへの変更なし。
 
 ---
 
-## GitHub Actions ワークフロー (`deploy-dev.yml`)
+## `deploy-dev.yml` の変更内容
 
-### トリガー
+### 認証: OIDC → アクセスキー
 
+**変更前:**
 ```yaml
-on:
-  push:
-    branches:
-      - develop
+permissions:
+  id-token: write
+  contents: read
+steps:
+  - uses: aws-actions/configure-aws-credentials@v4
+    with:
+      role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+      aws-region: ap-northeast-1
 ```
 
-### Job 構成
+**変更後:**
+```yaml
+# permissions ブロック削除
+steps:
+  - uses: aws-actions/configure-aws-credentials@v4
+    with:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ap-northeast-1
+```
 
-#### `backend-deploy`
+### 追加: `frontend-deploy` job
 
-| ステップ | 内容 |
-|---|---|
-| checkout | actions/checkout@v4 |
-| Python 3.12 | actions/setup-python@v5, cache: pip |
-| SAM CLI インストール | pip install aws-sam-cli |
-| AWS 認証 | aws-actions/configure-aws-credentials@v4 (access key 方式) |
-| sam build | `sam build --parallel --cached` |
-| sam deploy | `sam deploy --config-env dev --no-fail-on-empty-changeset` |
-| stack info | `aws cloudformation describe-stacks` でアウトプット表示 |
-
-#### `frontend-deploy`
-
-`needs: backend-deploy` — backend が失敗した場合はスキップ。
+`needs: deploy-dev` — バックエンドが失敗した場合はスキップ。
 
 | ステップ | 内容 |
 |---|---|
 | checkout | actions/checkout@v4 |
-| Node.js | actions/setup-node@v4, cache: npm |
-| 依存インストール | `npm ci` (frontend/ ディレクトリ) |
-| ビルド | `npm run build` |
-| S3 sync (JS) | `--content-type "application/javascript"` |
+| Node.js 20 | actions/setup-node@v4, cache: npm |
+| 依存インストール | `npm ci` (`working-directory: frontend`) |
+| ビルド | `npm run build` (`working-directory: frontend`) |
+| S3 sync (JS) | `--content-type "application/javascript" --delete` |
 | S3 sync (CSS) | `--content-type "text/css"` |
 | S3 cp (HTML) | `--content-type "text/html; charset=utf-8"` |
 
-### AWS 認証 (Secrets)
+S3 バケット: `groupware-frontend-dev-674594306903`
+
+`--delete` は JS sync のみ適用。Vite のハッシュ付きチャンクが蓄積しないようにする。
+
+---
+
+## `deploy-dev.sh` (新規)
+
+- AWS プロファイル: `ec-site-poc`
+- `set -euo pipefail` でエラー即終了
+- 実行方法: `bash deploy-dev.sh` (Git Bash / WSL)
+
+処理フロー:
+1. `sam build --parallel --cached`
+2. `sam deploy --config-env dev --no-confirm-changeset --no-fail-on-empty-changeset --profile ec-site-poc`
+3. `cd frontend && npm run build`
+4. S3 sync: JS (`--delete`) → CSS → HTML
+
+---
+
+## GitHub Secrets (ユーザー対応)
 
 | Secret 名 | 説明 |
 |---|---|
-| `AWS_ACCESS_KEY_ID` | dev デプロイ用 IAM ユーザーキー |
+| `AWS_ACCESS_KEY_ID` | `~/.aws/credentials` の `[ec-site-poc]` から取得 |
 | `AWS_SECRET_ACCESS_KEY` | 同上 |
 
-prod ワークフローの OIDC 設定とは独立しており競合なし。
-
-### リージョン
-
-`ap-northeast-1` (samconfig.toml の dev 設定と一致)
+登録場所: リポジトリ Settings → Secrets and variables → Actions
 
 ---
 
-## ローカルスクリプト (`deploy-dev.sh`)
+## 既存の維持要素
 
-- AWS プロファイル: `ec-site-poc`
-- 対象: dev 環境のみ
-- 実行方法: `bash deploy-dev.sh` (Git Bash / WSL)
-- `set -euo pipefail` でエラー即終了
-
-### 処理フロー
-
-1. SAM build (`--parallel --cached`)
-2. SAM deploy (`--config-env dev --no-fail-on-empty-changeset --profile ec-site-poc`)
-3. frontend build (`cd frontend && npm run build`)
-4. S3 sync: JS → CSS → HTML (Content-Type 明示)
-
----
-
-## 既存構成との関係
-
-| 環境 | バックエンド | フロントエンド |
-|---|---|---|
-| dev (CI) | `deploy-dev.yml` (新規) | `deploy-dev.yml` (新規) |
-| dev (ローカル) | `deploy-dev.sh` (新規) | `deploy-dev.sh` (新規) |
-| prod (CI) | `deploy-prod.yml` (既存・変更なし) | 未対応 (スコープ外) |
-
----
-
-## ユーザー対応が必要な事項
-
-1. **GitHub Secrets の登録**: リポジトリの Settings → Secrets and variables → Actions に `AWS_ACCESS_KEY_ID` と `AWS_SECRET_ACCESS_KEY` を追加
-2. **IAM ユーザー/キーの確認**: dev デプロイに必要な権限 (CloudFormation, S3, Lambda 等) を持つキーが存在するか確認
+以下は既存 `deploy-dev.yml` から変更なし:
+- S3 Lambda トリガー設定ステップ
+- `generate-docs` job
+- `concurrency: cancel-in-progress: false`
+- `environment: dev`
