@@ -2,7 +2,6 @@
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
 
 import auth
 import response
