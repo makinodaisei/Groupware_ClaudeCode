@@ -16,7 +16,7 @@ Parameters:
 # ---------- Globals ----------
 Globals:
   Function:
-    Runtime: python3.12
+    Runtime: python3.11
     Architectures: [x86_64]
     MemorySize: 256
     Timeout: 29
@@ -97,6 +97,12 @@ Resources:
       UserPoolId: !Ref CognitoUserPool
       Description: Regular users
 
+  CognitoUserPoolGroupEditor:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: editor
+      UserPoolId: !Ref CognitoUserPool
+
   # ===== API Gateway =====
   GroupwareApi:
     Type: AWS::Serverless::HttpApi
@@ -133,13 +139,13 @@ Resources:
     Properties:
       LayerName: !Sub "groupware-common-${Environment}"
       Description: Shared utilities for all Groupware Lambda functions
-      ContentUri: backend/layers/common/
+      ContentUri: backend/layers/common/python/
       CompatibleRuntimes:
-        - python3.12
+        - python3.11
       CompatibleArchitectures:
         - x86_64
     Metadata:
-      BuildMethod: python3.12
+      BuildMethod: python3.11
 
   # ===== Lambda Functions =====
   UsersFunction:
@@ -163,20 +169,40 @@ Resources:
               - cognito-idp:AdminUpdateUserAttributes
               - cognito-idp:ListUsers
               - cognito-idp:ListUsersInGroup
+              - cognito-idp:AdminEnableUser
+              - cognito-idp:AdminDisableUser
             Resource: !GetAtt CognitoUserPool.Arn
       Events:
-        UsersRoot:
+        UsersGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref GroupwareApi
             Path: /users
-            Method: ANY
-        UsersProxy:
+            Method: GET
+        UsersPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /users
+            Method: POST
+        UsersProxyGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref GroupwareApi
             Path: /users/{proxy+}
-            Method: ANY
+            Method: GET
+        UsersProxyPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /users/{proxy+}
+            Method: PUT
+        UsersProxyDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /users/{proxy+}
+            Method: DELETE
 
   SchedulesFunction:
     Type: AWS::Serverless::Function
@@ -189,18 +215,36 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroupwareTable
       Events:
-        SchedulesRoot:
+        SchedulesGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref GroupwareApi
             Path: /schedules
-            Method: ANY
-        SchedulesProxy:
+            Method: GET
+        SchedulesPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /schedules
+            Method: POST
+        SchedulesProxyGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref GroupwareApi
             Path: /schedules/{proxy+}
-            Method: ANY
+            Method: GET
+        SchedulesProxyPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /schedules/{proxy+}
+            Method: PUT
+        SchedulesProxyDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /schedules/{proxy+}
+            Method: DELETE
 
   FacilitiesFunction:
     Type: AWS::Serverless::Function
@@ -213,18 +257,42 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroupwareTable
       Events:
-        FacilitiesRoot:
+        FacilitiesGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref GroupwareApi
             Path: /facilities
-            Method: ANY
-        FacilitiesProxy:
+            Method: GET
+        FacilitiesPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facilities
+            Method: POST
+        FacilitiesProxyGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref GroupwareApi
             Path: /facilities/{proxy+}
-            Method: ANY
+            Method: GET
+        FacilitiesProxyPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facilities/{proxy+}
+            Method: POST
+        FacilitiesProxyDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facilities/{proxy+}
+            Method: DELETE
+        FacilitiesProxyPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facilities/{proxy+}
+            Method: PUT
 
   DocumentsFunction:
     Type: AWS::Serverless::Function
@@ -239,18 +307,24 @@ Resources:
         - S3CrudPolicy:
             BucketName: !Ref DocumentsBucket
       Events:
-        DocumentsRoot:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref GroupwareApi
-            Path: /documents
-            Method: ANY
-        DocumentsProxy:
+        DocumentsProxyGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref GroupwareApi
             Path: /documents/{proxy+}
-            Method: ANY
+            Method: GET
+        DocumentsProxyPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /documents/{proxy+}
+            Method: POST
+        DocumentsProxyDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /documents/{proxy+}
+            Method: DELETE
         # S3Upload event is set up post-deployment via CLI to avoid circular dependency
 
   # ===== DynamoDB =====
