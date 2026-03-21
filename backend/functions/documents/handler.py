@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 
 import auth
 import response
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 from db_client import get_table, get_s3_client
+from utils import now_iso, get_method_and_path
+from router import Router
 from validators import parse_body, require_fields, sanitize_string
 
 logger = logging.getLogger()
@@ -19,15 +21,6 @@ PRESIGNED_URL_EXPIRY = 900  # 15 minutes
 
 
 # ---------- Helpers ----------
-
-def _get_method_and_path(event: dict) -> tuple[str, str]:
-    ctx = event.get("requestContext", {}).get("http", {})
-    return ctx.get("method", ""), ctx.get("path", "")
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _item_to_folder(item: dict) -> dict:
     return {
@@ -66,13 +59,8 @@ def list_folders(event: dict) -> dict:
     parent_id = params.get("parentFolderId", "ROOT")
 
     table = get_table()
-    resp = table.query(
-        KeyConditionExpression=Key("PK").eq(f"DOCS#{parent_id}") & Key("SK").eq("#METADATA"),
-    )
-    # List all folders that have this parent
     resp = table.scan(
-        FilterExpression="parentFolderId = :parent AND entityType = :t",
-        ExpressionAttributeValues={":parent": parent_id, ":t": "FOLDER"},
+        FilterExpression=Attr("parentFolderId").eq(parent_id) & Attr("entityType").eq("FOLDER"),
     )
     folders = [_item_to_folder(item) for item in resp.get("Items", [])]
     return response.ok({"folders": folders})
@@ -99,8 +87,8 @@ def create_folder(event: dict) -> dict:
         "parentFolderId": parent_id,
         "folderPath": folder_path,
         "createdBy": user_id,
-        "createdAt": _now_iso(),
-        "updatedAt": _now_iso(),
+        "createdAt": now_iso(),
+        "updatedAt": now_iso(),
     }
     get_table().put_item(Item=item)
     return response.created(_item_to_folder(item))
@@ -111,7 +99,7 @@ def delete_folder(event: dict) -> dict:
     if deny:
         return deny
 
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     match = re.search(r"/documents/folders/([^/]+)$", path)
     if not match:
         return response.bad_request("Invalid path")
@@ -132,7 +120,7 @@ def delete_folder(event: dict) -> dict:
 # ---------- File Handlers ----------
 
 def list_files(event: dict) -> dict:
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     match = re.search(r"/documents/folders/([^/]+)/files", path)
     if not match:
         return response.bad_request("Invalid path")
@@ -149,7 +137,7 @@ def list_files(event: dict) -> dict:
 def get_upload_url(event: dict) -> dict:
     """Generate presigned S3 PUT URL for direct browser upload."""
     user_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     match = re.search(r"/documents/folders/([^/]+)/files/upload-url", path)
     if not match:
         return response.bad_request("Invalid path")
@@ -178,8 +166,8 @@ def get_upload_url(event: dict) -> dict:
         "s3Key": s3_key,
         "status": "pending",
         "uploadedBy": user_id,
-        "createdAt": _now_iso(),
-        "updatedAt": _now_iso(),
+        "createdAt": now_iso(),
+        "updatedAt": now_iso(),
     }
     get_table().put_item(Item=item)
 
@@ -205,7 +193,7 @@ def get_upload_url(event: dict) -> dict:
 
 def get_download_url(event: dict) -> dict:
     """Generate presigned S3 GET URL for file download."""
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     match = re.search(r"/documents/folders/([^/]+)/files/([^/]+)/download-url", path)
     if not match:
         return response.bad_request("Invalid path")
@@ -235,7 +223,7 @@ def get_download_url(event: dict) -> dict:
 
 def delete_file(event: dict) -> dict:
     user_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     match = re.search(r"/documents/folders/([^/]+)/files/([^/]+)$", path)
     if not match:
         return response.bad_request("Invalid path")
@@ -286,7 +274,7 @@ def handle_s3_event(event: dict) -> None:
                 ExpressionAttributeValues={
                     ":uploaded": "uploaded",
                     ":size": size,
-                    ":now": _now_iso(),
+                    ":now": now_iso(),
                 },
                 ConditionExpression="attribute_exists(PK)",
             )
@@ -297,8 +285,17 @@ def handle_s3_event(event: dict) -> None:
 
 # ---------- Router ----------
 
+_router = Router()
+_router.add("GET",    r".*/documents/folders$",                                      list_folders)
+_router.add("POST",   r".*/documents/folders$",                                      create_folder)
+_router.add("DELETE", r".*/documents/folders/[^/]+$",                               delete_folder)
+_router.add("GET",    r".*/documents/folders/[^/]+/files$",                         list_files)
+_router.add("POST",   r".*/documents/folders/[^/]+/files/upload-url$",              get_upload_url)
+_router.add("GET",    r".*/documents/folders/[^/]+/files/[^/]+/download-url$",      get_download_url)
+_router.add("DELETE", r".*/documents/folders/[^/]+/files/[^/]+$",                   delete_file)
+
+
 def lambda_handler(event: dict, context) -> dict:
-    # S3 event notification (not an HTTP request)
     if _is_s3_event(event):
         handle_s3_event(event)
         return {"statusCode": 200}
@@ -306,43 +303,4 @@ def lambda_handler(event: dict, context) -> dict:
     logger.info("Documents event: method=%s path=%s",
                 event.get("requestContext", {}).get("http", {}).get("method"),
                 event.get("requestContext", {}).get("http", {}).get("path"))
-
-    method, path = _get_method_and_path(event)
-
-    try:
-        if method == "OPTIONS":
-            return response.ok({})
-
-        # Folders
-        if re.match(r".*/documents/folders$", path):
-            if method == "GET":
-                return list_folders(event)
-            if method == "POST":
-                return create_folder(event)
-
-        if re.match(r".*/documents/folders/[^/]+$", path):
-            if method == "DELETE":
-                return delete_folder(event)
-
-        # Files
-        if re.match(r".*/documents/folders/[^/]+/files$", path):
-            if method == "GET":
-                return list_files(event)
-
-        if re.match(r".*/documents/folders/[^/]+/files/upload-url$", path):
-            if method == "POST":
-                return get_upload_url(event)
-
-        if re.match(r".*/documents/folders/[^/]+/files/[^/]+/download-url$", path):
-            if method == "GET":
-                return get_download_url(event)
-
-        if re.match(r".*/documents/folders/[^/]+/files/[^/]+$", path):
-            if method == "DELETE":
-                return delete_file(event)
-
-        return response.not_found("Endpoint")
-
-    except Exception as e:
-        logger.exception("Unhandled error in documents handler")
-        return response.server_error(str(e))
+    return _router.dispatch(event)
