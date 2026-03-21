@@ -102,6 +102,7 @@ Resources:
     Properties:
       GroupName: editor
       UserPoolId: !Ref CognitoUserPool
+      Description: Editors can write documents and manage reservations
 
   # ===== API Gateway =====
   GroupwareApi:

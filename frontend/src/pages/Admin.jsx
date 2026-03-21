@@ -69,6 +69,7 @@ function UsersTab() {
   }
 
   async function handleRoleChange(userId, newRole) {
+    if (newRole === 'admin' && !confirm('このユーザーを管理者に昇格しますか？')) return;
     try {
       await updateUser(userId, { role: newRole });
       showToast('ロールを変更しました', 'success');
