@@ -1,8 +1,45 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { getUsers, createUser, updateUser, deleteUser } from '../lib/api';
 import { getFacilities, createFacility, updateFacility, deleteFacility } from '../lib/api';
 import { useToast } from '../components/Toast';
 import Drawer from '../components/Drawer';
+
+// ---------- 施設行コンポーネント（モジュールレベル） ----------
+
+function FacilityRow({ f, indent = false, openEdit, handleDelete, collapsed, toggleCollapsed }) {
+  const isGroup = f.facilityType === 'group';
+  const isCollapsed = collapsed[f.facilityId];
+  return (
+    <tr>
+      <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
+        {isGroup ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <button
+              type="button"
+              onClick={() => toggleCollapsed(f.facilityId)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1 }}
+              title={isCollapsed ? '展開' : '折りたたむ'}
+            >
+              {isCollapsed ? '▶' : '▼'}
+            </button>
+            <strong>{f.name}</strong>
+          </span>
+        ) : f.name}
+      </td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.location || '-'}</td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.capacity}名</td>
+      <td>
+        <span className={`badge ${f.facilityType === 'group' ? 'badge-orange' : 'badge-blue'}`}>
+          {f.facilityType === 'group' ? 'グループ' : '施設'}
+        </span>
+      </td>
+      <td style={{ display: 'flex', gap: '0.4rem' }}>
+        <button type="button" className="btn btn-sm" onClick={() => openEdit(f)}>編集</button>
+        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(f)}>削除</button>
+      </td>
+    </tr>
+  );
+}
 
 // ---------- ユーザーマスタタブ ----------
 
@@ -11,7 +48,7 @@ function UsersTab() {
   const [users, setUsers] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const data = await getUsers();
       setUsers(data.users || []);
@@ -19,16 +56,15 @@ function UsersTab() {
       setUsers([]);
       showToast('ユーザーの取得に失敗しました', 'error');
     }
-  }
+  }, [showToast]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   async function handleInvite(fd) {
     if (!fd.email?.trim()) throw 'メールアドレスを入力してください';
     if (!fd.name?.trim()) throw '表示名を入力してください';
     await createUser({ email: fd.email.trim(), name: fd.name.trim(), role: fd.role || 'user' });
     showToast('招待メールを送信しました', 'success');
-    setInviteOpen(false);
     load();
   }
 
@@ -71,7 +107,7 @@ function UsersTab() {
       <div className="card">
         <table>
           <thead>
-            <tr><th>名前</th><th>メール</th><th>ロール</th><th>状態</th><th>操作</th></tr>
+            <tr><th scope="col">名前</th><th scope="col">メール</th><th scope="col">ロール</th><th scope="col">状態</th><th scope="col">操作</th></tr>
           </thead>
           <tbody>
             {users === null ? (
@@ -100,12 +136,14 @@ function UsersTab() {
                 </td>
                 <td style={{ display: 'flex', gap: '0.4rem' }}>
                   <button
+                    type="button"
                     className="btn btn-sm"
                     onClick={() => handleToggleEnabled(u.userId, u.enabled)}
                   >
                     {u.enabled ? '無効化' : '有効化'}
                   </button>
                   <button
+                    type="button"
                     className="btn btn-sm btn-danger"
                     onClick={() => handleDelete(u.userId, u.name)}
                   >
@@ -149,8 +187,9 @@ function FacilitiesTab() {
   const [facilities, setFacilities] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
+  const [collapsed, setCollapsed] = useState({});
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const data = await getFacilities();
       setFacilities(data.facilities || []);
@@ -158,9 +197,9 @@ function FacilitiesTab() {
       setFacilities([]);
       showToast('施設情報の取得に失敗しました', 'error');
     }
-  }
+  }, [showToast]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   function openCreate() { setEditTarget(null); setDrawerOpen(true); }
   function openEdit(f) { setEditTarget(f); setDrawerOpen(true); }
@@ -208,8 +247,6 @@ function FacilitiesTab() {
     }
   }
 
-  const [collapsed, setCollapsed] = useState({});
-
   const groups = facilities ? facilities.filter(f => f.facilityType === 'group') : [];
   const topLevel = facilities ? facilities.filter(f => f.facilityType !== 'group' && f.parentId === 'ROOT') : [];
 
@@ -221,40 +258,6 @@ function FacilitiesTab() {
     setCollapsed(prev => ({ ...prev, [groupId]: !prev[groupId] }));
   }
 
-  function FacilityRow({ f, indent = false }) {
-    const isGroup = f.facilityType === 'group';
-    const isCollapsed = collapsed[f.facilityId];
-    return (
-      <tr>
-        <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
-          {isGroup ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-              <button
-                onClick={() => toggleCollapsed(f.facilityId)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1 }}
-                title={isCollapsed ? '展開' : '折りたたむ'}
-              >
-                {isCollapsed ? '▶' : '▼'}
-              </button>
-              <strong>{f.name}</strong>
-            </span>
-          ) : f.name}
-        </td>
-        <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.location || '-'}</td>
-        <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.capacity}名</td>
-        <td>
-          <span className={`badge ${f.facilityType === 'group' ? 'badge-orange' : 'badge-blue'}`}>
-            {f.facilityType === 'group' ? 'グループ' : '施設'}
-          </span>
-        </td>
-        <td style={{ display: 'flex', gap: '0.4rem' }}>
-          <button className="btn btn-sm" onClick={() => openEdit(f)}>編集</button>
-          <button className="btn btn-sm btn-danger" onClick={() => handleDelete(f)}>削除</button>
-        </td>
-      </tr>
-    );
-  }
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
@@ -263,7 +266,7 @@ function FacilitiesTab() {
       <div className="card">
         <table>
           <thead>
-            <tr><th>名前</th><th>場所</th><th>収容</th><th>種別</th><th>操作</th></tr>
+            <tr><th scope="col">名前</th><th scope="col">場所</th><th scope="col">収容</th><th scope="col">種別</th><th scope="col">操作</th></tr>
           </thead>
           <tbody>
             {facilities === null ? (
@@ -274,13 +277,36 @@ function FacilitiesTab() {
               <>
                 {groups.map(g => (
                   <Fragment key={g.facilityId}>
-                    <FacilityRow f={g} />
+                    <FacilityRow
+                      f={g}
+                      openEdit={openEdit}
+                      handleDelete={handleDelete}
+                      collapsed={collapsed}
+                      toggleCollapsed={toggleCollapsed}
+                    />
                     {!collapsed[g.facilityId] && getChildren(g.facilityId).map(child => (
-                      <FacilityRow key={child.facilityId} f={child} indent />
+                      <FacilityRow
+                        key={child.facilityId}
+                        f={child}
+                        indent
+                        openEdit={openEdit}
+                        handleDelete={handleDelete}
+                        collapsed={collapsed}
+                        toggleCollapsed={toggleCollapsed}
+                      />
                     ))}
                   </Fragment>
                 ))}
-                {topLevel.map(f => <FacilityRow key={f.facilityId} f={f} />)}
+                {topLevel.map(f => (
+                  <FacilityRow
+                    key={f.facilityId}
+                    f={f}
+                    openEdit={openEdit}
+                    handleDelete={handleDelete}
+                    collapsed={collapsed}
+                    toggleCollapsed={toggleCollapsed}
+                  />
+                ))}
               </>
             )}
           </tbody>
@@ -346,6 +372,7 @@ export default function Admin() {
       <div style={{ display: 'flex', gap: '0', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
         {TABS.map(tab => (
           <button
+            type="button"
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             style={{
