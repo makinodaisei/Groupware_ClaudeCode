@@ -208,6 +208,8 @@ function FacilitiesTab() {
     }
   }
 
+  const [collapsed, setCollapsed] = useState({});
+
   const groups = facilities ? facilities.filter(f => f.facilityType === 'group') : [];
   const topLevel = facilities ? facilities.filter(f => f.facilityType !== 'group' && f.parentId === 'ROOT') : [];
 
@@ -215,11 +217,28 @@ function FacilitiesTab() {
     return facilities ? facilities.filter(f => f.parentId === groupId) : [];
   }
 
+  function toggleCollapsed(groupId) {
+    setCollapsed(prev => ({ ...prev, [groupId]: !prev[groupId] }));
+  }
+
   function FacilityRow({ f, indent = false }) {
+    const isGroup = f.facilityType === 'group';
+    const isCollapsed = collapsed[f.facilityId];
     return (
       <tr>
         <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
-          {f.facilityType === 'group' ? <strong>{f.name}</strong> : f.name}
+          {isGroup ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <button
+                onClick={() => toggleCollapsed(f.facilityId)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1 }}
+                title={isCollapsed ? '展開' : '折りたたむ'}
+              >
+                {isCollapsed ? '▶' : '▼'}
+              </button>
+              <strong>{f.name}</strong>
+            </span>
+          ) : f.name}
         </td>
         <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.location || '-'}</td>
         <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.capacity}名</td>
@@ -256,7 +275,7 @@ function FacilitiesTab() {
                 {groups.map(g => (
                   <Fragment key={g.facilityId}>
                     <FacilityRow f={g} />
-                    {getChildren(g.facilityId).map(child => (
+                    {!collapsed[g.facilityId] && getChildren(g.facilityId).map(child => (
                       <FacilityRow key={child.facilityId} f={child} indent />
                     ))}
                   </Fragment>
