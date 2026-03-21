@@ -8,7 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Schedule from './pages/Schedule';
 import Facility from './pages/Facility';
 import Documents from './pages/Documents';
-import Users from './pages/Users';
+import Admin from './pages/Admin';
 
 function AppLayout() {
   const { user } = useAuth();
@@ -28,7 +28,8 @@ function AppLayout() {
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/facility" element={<Facility />} />
               <Route path="/documents" element={<Documents />} />
-              <Route path="/users" element={user?.role === 'admin' ? <Users /> : <Navigate to="/" />} />
+              <Route path="/admin" element={user?.role === 'admin' ? <Admin /> : <Navigate to="/" />} />
+              <Route path="/users" element={<Navigate to="/admin" replace />} />
             </Routes>
           </div>
         </main>
