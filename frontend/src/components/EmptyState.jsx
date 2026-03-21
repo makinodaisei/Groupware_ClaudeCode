@@ -38,7 +38,7 @@ const ICONS = {
   ),
 };
 
-export default function EmptyState({ icon = 'document', message, action }) {
+export default function EmptyState({ icon = 'document', message = '', action }) {
   return (
     <div style={{
       display: 'flex',
@@ -56,7 +56,7 @@ export default function EmptyState({ icon = 'document', message, action }) {
         {message}
       </p>
       {action && (
-        <button type="button" className="btn btn-primary" style={{ fontSize: '0.82rem' }} onClick={action.onClick}>
+        <button type="button" className="btn btn-primary" style={{ fontSize: '0.82rem' }} onClick={action.onClick ?? (() => {})}>
           {action.label}
         </button>
       )}
