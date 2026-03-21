@@ -309,7 +309,6 @@ def test_create_user_rejects_invalid_role():
 @mock_aws
 def test_update_user_role_to_editor():
     """admin が user を editor に変更できる"""
-    os.environ["USER_POOL_ID"] = USER_POOL_ID
     cognito = boto3.client("cognito-idp", region_name="us-east-1")
     pool = cognito.create_user_pool(PoolName="test-pool", Schema=[{"Name": "role", "AttributeDataType": "String", "Mutable": True}])
     pool_id = pool["UserPool"]["Id"]
@@ -331,7 +330,6 @@ def test_update_user_role_to_editor():
 @mock_aws
 def test_update_user_enable_disable():
     """admin が ユーザーを無効化・有効化できる"""
-    os.environ["USER_POOL_ID"] = USER_POOL_ID
     cognito = boto3.client("cognito-idp", region_name="us-east-1")
     pool = cognito.create_user_pool(PoolName="test-pool")
     pool_id = pool["UserPool"]["Id"]
