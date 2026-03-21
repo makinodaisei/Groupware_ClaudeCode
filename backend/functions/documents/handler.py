@@ -66,6 +66,10 @@ def list_folders(event: dict) -> dict:
 
 
 def create_folder(event: dict) -> dict:
+    deny = auth.require_editor_or_above(event)
+    if deny:
+        return deny
+
     user_id = auth.get_user_id(event)
     body = parse_body(event)
     missing = require_fields(body, ["name"])
@@ -135,6 +139,10 @@ def list_files(event: dict) -> dict:
 
 def get_upload_url(event: dict) -> dict:
     """Generate presigned S3 PUT URL for direct browser upload."""
+    deny = auth.require_editor_or_above(event)
+    if deny:
+        return deny
+
     user_id = auth.get_user_id(event)
     _, path = get_method_and_path(event)
     match = re.search(r"/documents/folders/([^/]+)/files/upload-url", path)
