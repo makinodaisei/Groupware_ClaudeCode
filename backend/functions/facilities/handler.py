@@ -46,8 +46,10 @@ def _item_to_facility(item: dict) -> dict:
         "facilityId": item.get("facilityId"),
         "name": item.get("name"),
         "description": item.get("description", ""),
-        "capacity": item.get("capacity", 1),
+        "capacity": int(item.get("capacity", 1)),
         "location": item.get("location", ""),
+        "parentId": item.get("parentId", "ROOT"),
+        "facilityType": item.get("facilityType", "facility"),
         "createdAt": item.get("createdAt"),
     }
 
@@ -107,11 +109,91 @@ def create_facility(event: dict) -> dict:
         "description": sanitize_string(body.get("description", ""), 1000),
         "capacity": int(body.get("capacity", 1)),
         "location": sanitize_string(body.get("location", ""), 500),
+        "parentId": body.get("parentId", "ROOT"),
+        "facilityType": body.get("facilityType", "facility"),
         "createdAt": now_iso(),
         "createdBy": auth.get_user_id(event),
     }
     get_table().put_item(Item=item)
     return response.created(_item_to_facility(item))
+
+
+def update_facility(event: dict) -> dict:
+    deny = auth.require_admin(event)
+    if deny:
+        return deny
+
+    _, path = get_method_and_path(event)
+    facility_id, _ = _extract_ids(path)
+
+    table = get_table()
+    resp = table.get_item(Key={"PK": f"FACILITY#{facility_id}", "SK": "#METADATA"})
+    if not resp.get("Item"):
+        return response.not_found("Facility")
+
+    body = parse_body(event)
+    update_expr_parts = []
+    expr_attr_values = {}
+    expr_attr_names = {}
+
+    if "name" in body:
+        update_expr_parts.append("#name = :name")
+        expr_attr_names["#name"] = "name"
+        expr_attr_values[":name"] = sanitize_string(body["name"], 200)
+    if "description" in body:
+        update_expr_parts.append("description = :desc")
+        expr_attr_values[":desc"] = sanitize_string(body["description"], 1000)
+    if "capacity" in body:
+        update_expr_parts.append("#cap = :cap")
+        expr_attr_names["#cap"] = "capacity"
+        expr_attr_values[":cap"] = int(body["capacity"])
+    if "location" in body:
+        update_expr_parts.append("#loc = :loc")
+        expr_attr_names["#loc"] = "location"
+        expr_attr_values[":loc"] = sanitize_string(body["location"], 500)
+
+    if not update_expr_parts:
+        return response.bad_request("No fields to update")
+
+    kwargs = {
+        "Key": {"PK": f"FACILITY#{facility_id}", "SK": "#METADATA"},
+        "UpdateExpression": "SET " + ", ".join(update_expr_parts),
+        "ExpressionAttributeValues": expr_attr_values,
+        "ReturnValues": "ALL_NEW",
+    }
+    if expr_attr_names:
+        kwargs["ExpressionAttributeNames"] = expr_attr_names
+
+    result = table.update_item(**kwargs)
+    return response.ok(_item_to_facility(result["Attributes"]))
+
+
+def delete_facility(event: dict) -> dict:
+    deny = auth.require_admin(event)
+    if deny:
+        return deny
+
+    _, path = get_method_and_path(event)
+    facility_id, _ = _extract_ids(path)
+    table = get_table()
+
+    # 子施設チェック
+    children = table.scan(
+        FilterExpression=Attr("parentId").eq(facility_id) & Attr("SK").eq("#METADATA"),
+    )
+    if children.get("Items"):
+        return response.conflict("Cannot delete a group that has child facilities")
+
+    # 予約チェック
+    reservations = table.query(
+        KeyConditionExpression=Key("PK").eq(f"FACILITY#{facility_id}") & Key("SK").begins_with("RESERVATION#"),
+        Limit=1,
+    )
+    if reservations.get("Items"):
+        return response.conflict("Cannot delete a facility that has reservations")
+
+    table.delete_item(Key={"PK": f"FACILITY#{facility_id}", "SK": "#METADATA"})
+    return response.no_content()
 
 
 # ---------- Reservation CRUD ----------
@@ -295,6 +377,8 @@ _router = Router()
 _router.add("GET",    r".*/facilities$",                               list_facilities)
 _router.add("POST",   r".*/facilities$",                               create_facility)
 _router.add("GET",    r".*/facilities/[^/]+$",                         get_facility)
+_router.add("PUT",    r".*/facilities/[^/]+$",                         update_facility)
+_router.add("DELETE", r".*/facilities/[^/]+$",                         delete_facility)
 _router.add("GET",    r".*/facilities/[^/]+/reservations$",            list_reservations)
 _router.add("POST",   r".*/facilities/[^/]+/reservations$",            create_reservation)
 _router.add("DELETE", r".*/facilities/[^/]+/reservations/[^/]+$",      delete_reservation)

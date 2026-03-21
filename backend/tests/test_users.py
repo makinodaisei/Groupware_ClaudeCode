@@ -9,8 +9,10 @@ from moto import mock_aws
 
 # パスを絶対パスで解決する
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "layers", "common", "python"))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "functions", "users"))
+_COMMON_PATH = os.path.join(_REPO_ROOT, "layers", "common", "python")
+_USERS_PATH = os.path.join(_REPO_ROOT, "functions", "users")
+sys.path.insert(0, _COMMON_PATH)
+sys.path.insert(0, _USERS_PATH)
 
 
 def _make_admin_event(method: str, path: str, body: dict = None, sub: str = "admin-sub") -> dict:
@@ -48,6 +50,7 @@ def test_create_user_with_editor_role():
         cognito.create_group(GroupName=group, UserPoolId=pool_id)
 
     import importlib
+    sys.path.insert(0, _USERS_PATH)
     import handler
     importlib.reload(handler)
 
@@ -70,6 +73,7 @@ def test_create_user_rejects_invalid_role():
     os.environ["USER_POOL_ID"] = pool["UserPool"]["Id"]
 
     import importlib
+    sys.path.insert(0, _USERS_PATH)
     import handler
     importlib.reload(handler)
 
@@ -92,6 +96,7 @@ def test_update_user_role_to_editor():
     cognito.admin_add_user_to_group(UserPoolId=pool_id, Username="target@example.com", GroupName="user")
 
     import importlib
+    sys.path.insert(0, _USERS_PATH)
     import handler
     importlib.reload(handler)
 
@@ -111,6 +116,7 @@ def test_update_user_enable_disable():
     cognito.admin_create_user(UserPoolId=pool_id, Username="target@example.com")
 
     import importlib
+    sys.path.insert(0, _USERS_PATH)
     import handler
     importlib.reload(handler)
 
