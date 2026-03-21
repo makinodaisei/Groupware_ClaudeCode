@@ -55,6 +55,7 @@ export function timeAgo(isoString) {
   const date = new Date(isoString);
   if (isNaN(date)) return '';
   const diff = Date.now() - date.getTime();
+  if (diff < 0) return 'たった今';
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'たった今';
   if (mins < 60) return `${mins}分前`;
@@ -62,6 +63,5 @@ export function timeAgo(isoString) {
   if (hours < 24) return `${hours}時間前`;
   const days = Math.floor(diff / 86400000);
   if (days < 7) return `${days}日前`;
-  const d = new Date(isoString);
-  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
 }
