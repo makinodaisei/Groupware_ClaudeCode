@@ -39,7 +39,7 @@ function TimelineBar({ reservations }) {
 
   return (
     <div style={{ flex: 1 }}>
-      <div className="timeline-bar" style={{ position: 'relative', height: 20 }}>{blocks}</div>
+      <div className="timeline-bar">{blocks}</div>
       <div className="timeline-labels" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
         <span>9:00</span><span>12:00</span><span>15:00</span><span>18:00</span>
       </div>
@@ -147,7 +147,8 @@ export default function Facility() {
 
   // Derive groups and flat facilities
   const groups = facilities.filter(f => f.facilityType === 'group');
-  const flatFacilities = facilities.filter(f => f.facilityType !== 'group' && f.parentId === 'ROOT');
+  const groupIds = new Set(groups.map(g => g.facilityId));
+  const flatFacilities = facilities.filter(f => f.facilityType !== 'group' && (f.parentId === 'ROOT' || !groupIds.has(f.parentId)));
   function getChildren(groupId) {
     return facilities.filter(f => f.facilityType !== 'group' && f.parentId === groupId);
   }
