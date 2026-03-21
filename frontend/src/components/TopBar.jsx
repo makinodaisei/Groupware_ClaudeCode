@@ -14,7 +14,7 @@ export default function TopBar() {
       <div className="topbar-user" onClick={() => setDropdownOpen(o => !o)}>
         <div className="topbar-avatar">{initial}</div>
         <span>{user?.name || user?.email}</span>
-        <span>▾</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ marginLeft: 2 }}><path d="M0 3l5 5 5-5z"/></svg>
         {dropdownOpen && (
           <div className="topbar-dropdown open">
             <div className="topbar-dropdown-item danger" onClick={logout}>
