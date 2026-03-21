@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api } from '../lib/api';
+import { getUsers, createUser } from '../lib/api';
 import { useToast } from '../components/Toast';
 import Drawer from '../components/Drawer';
 
@@ -10,7 +10,7 @@ export default function Users() {
 
   async function loadUsers() {
     try {
-      const data = await api('GET', '/users');
+      const data = await getUsers();
       setUsers(data.users || []);
     } catch {
       setUsers([]);
@@ -23,8 +23,7 @@ export default function Users() {
   async function handleInvite(fd) {
     if (!fd.email?.trim()) throw 'メールアドレスを入力してください';
     if (!fd.name?.trim()) throw '表示名を入力してください';
-    const res = await api('POST', '/users', { email: fd.email.trim(), name: fd.name.trim(), role: fd.role || 'user' });
-    if (res.error) throw res.message || 'エラーが発生しました';
+    await createUser({ email: fd.email.trim(), name: fd.name.trim(), role: fd.role || 'user' });
     showToast('招待メールを送信しました', 'success');
     loadUsers();
   }
