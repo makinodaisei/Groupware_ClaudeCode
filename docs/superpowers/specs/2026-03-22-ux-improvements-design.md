@@ -35,8 +35,9 @@
 ### データ取得
 
 - 今日のスケジュール: `GET /schedules?month=YYYY-MM` → 当日分をフィルタ（既存API）
-- 今日の施設予約: `GET /reservations?date=YYYY-MM-DD` → 全施設横断（既存API）
+- 今日の施設予約: `getFacilities()` で全施設取得後、各施設に `getReservations(facilityId, today)` をファンアウト（既存 `Facility.jsx` と同じパターン）。`facilityType: "group"` の施設は除外してから予約取得する
 - 統計カード: 既存のAPI呼び出しを流用（カウント値のみ表示）
+- 統計カードのアイコン: 絵文字は使わずSVGアイコンに置き換える
 
 ### アジェンダ行の仕様
 
@@ -45,6 +46,7 @@
 - 表示項目: 時刻・タイトル・場所/施設名
 - 予定なしの場合は Empty State（→ 提案5の仕様に従う）
 - ローディング中はスケルトン表示
+- `startDatetime` が null/undefined のアイテムはリスト末尾に追加（ソートから除外）
 
 ---
 
@@ -72,9 +74,9 @@
 
 - `facilityType: "group"` の施設はグループヘッダー行として表示（予約行なし、予約ボタンなし）
 - `facilityType: "facility"` の施設は予約可能行として表示
+- グループへの子施設割り当て: `f.parentId === group.facilityId` で判定。`f.parentId === "ROOT"`（リテラル文字列）の施設はグループなしでリスト末尾に表示
 - タイムライン範囲: 9:00〜18:00（既存の `toMin` ロジックを流用）
 - 各行右端に「予約する」ボタン → 既存のドロワーをそのまま使用
-- `parentId=ROOT` の施設はグループヘッダーなしでリスト末尾に表示
 - ローディング中はスケルトン行
 - 施設0件の場合は Empty State（→ 提案5の仕様に従う）
 
@@ -96,8 +98,8 @@
 └─────────────────────────┘
 ```
 
-- `uploadedBy` (userId) → ユーザー一覧から名前に変換（既存の `getUsers()` API使用）
-- `updatedAt` または `createdAt` → 相対時間表示（例: 「3日前」「1時間前」）
+- `uploadedBy` (userId) → ユーザー一覧から名前に変換（既存の `getUsers()` API使用）。`uploadedBy` はAPIレスポンスに含まれる
+- 日時は `updatedAt` を優先し、なければ `createdAt` を使用 → 相対時間表示（例: 「3日前」「1時間前」）
 - ユーザー名解決はコンポーネントマウント時に1回だけ `getUsers()` を呼んでマップ作成
 - userId→名前のマップが未解決の場合はuserIdをそのまま表示（フォールバック）
 
@@ -107,8 +109,8 @@
 - 1分未満 → 「たった今」
 - 1時間未満 → 「N分前」
 - 24時間未満 → 「N時間前」
-- 7日未満 → 「N日前」
-- それ以上 → 「YYYY/MM/DD」
+- 7日未満（168時間未満、境界値は「N日前」側に含む） → 「N日前」
+- 7日以上 → 「YYYY/MM/DD」
 
 ---
 
@@ -151,7 +153,7 @@
 | ページ | 条件 | icon | message | action |
 |--------|------|------|---------|--------|
 | Dashboard（アジェンダ） | 今日の予定0件 | calendar | 今日の予定はありません | 予定を追加 → `/schedule` |
-| Facility | 施設0件 | building | 施設が登録されていません | （adminのみ）施設を追加 → `/admin` |
+| Facility | 施設0件 | building | 施設が登録されていません | adminのみ: 呼び出し元 `Facility.jsx` が `user.role === 'admin'` のときのみ `action` propを渡す。EmptyState自体はroleを知らない |
 | Documents（ファイル） | ファイル0件 | document | このフォルダにファイルはありません | ファイルをアップロード |
 | Documents（フォルダ） | フォルダ0件 | document | フォルダがありません | フォルダを作成 |
 | Admin（ユーザー） | ユーザー0件 | user | ユーザーがいません | ユーザーを招待 |
@@ -180,7 +182,10 @@
 - `Sidebar.jsx` に `isOpen` / `onClose` props を追加してモバイル時のオーバーレイ制御
 - `TopBar.jsx` にハンバーガーボタンを追加（モバイル時のみ表示）
 - 状態管理: `App.jsx` の `AppLayout` で `menuOpen` state を持ち、TopBar と Sidebar に渡す
-- CSSの変更: `@media (max-width: 768px)` でサイドバーを `position: fixed` + `transform: translateX(-100%)` に変更、`open` クラスで `translateX(0)`
+- Sidebar の各ナビ項目の `onClick` で `navigate(path)` に加えて `onClose()` を呼ぶ（useEffect で location変化を監視する方式は不可）
+- z-index 階層: オーバーレイ背景 z-index 40、サイドバー z-index 45、TopBar z-index 50（TopBarが最前面）
+- CSSの変更: `@media (max-width: 768px)` でサイドバーを `position: fixed; top: var(--topbar-h); left: 0; height: 100%; transform: translateX(-100%)` に変更、`open` クラスで `transform: translateX(0)`
+- EmptyState のスタイルはインラインスタイルで実装（globals.css には追加しない）
 
 ---
 
