@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../lib/api';
+import { getFolders, createFolder, getFiles, getUploadUrl, getDownloadUrl } from '../lib/api';
 import { getFileIcon, formatSize } from '../lib/helpers';
 import { useToast } from '../components/Toast';
 
@@ -50,7 +50,7 @@ export default function Documents() {
 
   const loadFolders = useCallback(async () => {
     try {
-      const data = await api('GET', '/documents/folders');
+      const data = await getFolders();
       const fList = data.folders || [];
       const fMap = {};
       fList.forEach(f => { fMap[f.folderId] = f; });
@@ -84,7 +84,7 @@ export default function Documents() {
   async function loadFiles(folderId) {
     setFiles(null);
     try {
-      const data = await api('GET', `/documents/folders/${folderId}/files`);
+      const data = await getFiles(folderId);
       setFiles(data.files || []);
     } catch {
       setFiles([]);
@@ -101,7 +101,7 @@ export default function Documents() {
       body.parentPath = f?.path || '/';
     }
     try {
-      await api('POST', '/documents/folders', body);
+      await createFolder(body);
       setNewFolderName('');
       setShowFolderInput(false);
       showToast('フォルダを作成しました', 'success');
@@ -114,7 +114,7 @@ export default function Documents() {
   async function downloadFile(fileId) {
     if (!currentFolderId) return;
     try {
-      const data = await api('GET', `/documents/folders/${currentFolderId}/files/${fileId}/download-url`);
+      const data = await getDownloadUrl(currentFolderId, fileId);
       if (data.downloadUrl) window.open(data.downloadUrl, '_blank');
       else showToast('ダウンロードURLの取得に失敗しました', 'error');
     } catch {
@@ -132,7 +132,7 @@ export default function Documents() {
   async function uploadFile(file) {
     let uploadData;
     try {
-      uploadData = await api('POST', `/documents/folders/${currentFolderId}/files/upload-url`, {
+      uploadData = await getUploadUrl(currentFolderId, {
         name: file.name, contentType: file.type || 'application/octet-stream', size: file.size
       });
     } catch {
