@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../lib/api';
-import { toISO } from '../lib/helpers';
+import { getFacilities, getReservations, createReservation } from '../lib/api';
+import { toISO, todayLocalStr, todayApiStr } from '../lib/helpers';
 import { useToast } from '../components/Toast';
 import Drawer from '../components/Drawer';
 import DatePicker from '../components/DatePicker';
@@ -11,14 +11,6 @@ function toMin(iso) {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-function todayLocalStr() {
-  const n = new Date();
-  return `${n.getFullYear()}/${String(n.getMonth()+1).padStart(2,'0')}/${String(n.getDate()).padStart(2,'0')}`;
-}
-function todayApiStr() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
-}
 
 export default function Facility() {
   const showToast = useToast();
@@ -32,12 +24,12 @@ export default function Facility() {
     setFacilities(null);
     const today = todayApiStr();
     try {
-      const data = await api('GET', '/facilities');
+      const data = await getFacilities();
       const facs = data.facilities || [];
       setFacilities(facs);
       const resMap = {};
       await Promise.all(facs.map(f =>
-        api('GET', `/facilities/${f.facilityId}/reservations?date=${today}`)
+        getReservations(f.facilityId, today)
           .then(r => { resMap[f.facilityId] = r.reservations || []; })
           .catch(() => { resMap[f.facilityId] = []; })
       ));
@@ -63,11 +55,14 @@ export default function Facility() {
     const start = toISO(form.startDate, form.startTime);
     const end = toISO(form.endDate, form.endTime);
     if (new Date(end) <= new Date(start)) throw '終了時刻は開始時刻より後にしてください';
-    const res = await api('POST', `/facilities/${selectedFacility.facilityId}/reservations`, {
-      title: fd.title.trim(), startDatetime: start, endDatetime: end, notes: fd.notes || ''
-    });
-    if (res.error === 'CONFLICT') throw 'その時間帯は既に予約されています。別の時間を選択してください。';
-    if (res.error) throw res.message || 'エラーが発生しました';
+    try {
+      await createReservation(selectedFacility.facilityId, {
+        title: fd.title.trim(), startDatetime: start, endDatetime: end, notes: fd.notes || ''
+      });
+    } catch (err) {
+      if (err.status === 409) throw 'その時間帯は既に予約されています。別の時間を選択してください。';
+      throw err.message || 'エラーが発生しました';
+    }
     showToast('予約が完了しました', 'success');
     load();
   }
