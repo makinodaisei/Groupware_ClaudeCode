@@ -542,3 +542,58 @@ tr:hover td { background: #fafbfc; }
   .login-left { display: none; }
   .login-right { width: 100%; }
 }
+
+/* ===================== Mobile (≤768px) ===================== */
+
+/* Hamburger button — hidden on desktop, shown on mobile */
+.topbar-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 0 0.5rem 0 0;
+  line-height: 0;
+}
+
+@media (max-width: 768px) {
+  /* Show hamburger */
+  .topbar-hamburger {
+    display: flex;
+    align-items: center;
+  }
+
+  /* Sidebar: off-screen by default, slides in when .open */
+  .sidebar {
+    position: fixed;
+    top: var(--topbar-h);
+    left: 0;
+    height: calc(100vh - var(--topbar-h));
+    transform: translateX(-100%);
+    transition: transform var(--transition-mid);
+    z-index: 45;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* Semi-transparent overlay behind sidebar */
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    top: var(--topbar-h);
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 40;
+  }
+
+  /* Main content takes full width on mobile */
+  .main-content {
+    width: 100%;
+  }
+
+  /* Reduce padding on small screens */
+  .main-inner {
+    padding: 1rem;
+  }
+}

@@ -60,7 +60,7 @@ const ADMIN_ITEM = {
   ),
 };
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -68,28 +68,43 @@ export default function Sidebar() {
   const isActive = (path) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
+  function handleNav(path) {
+    navigate(path);
+    onClose?.();
+  }
+
   return (
-    <div className="sidebar">
-      {NAV_ITEMS.map(item => (
+    <>
+      {/* Overlay — mobile only, closes menu on tap */}
+      {isOpen && (
         <div
-          key={item.id}
-          className={`sidebar-item ${isActive(item.path) ? 'active' : ''}`}
-          onClick={() => navigate(item.path)}
-        >
-          {item.icon}
-          {item.title}
-        </div>
-      ))}
-      <div className="sidebar-spacer" />
-      {user?.role === 'admin' && (
-        <div
-          className={`sidebar-item ${isActive(ADMIN_ITEM.path) ? 'active' : ''}`}
-          onClick={() => navigate(ADMIN_ITEM.path)}
-        >
-          {ADMIN_ITEM.icon}
-          {ADMIN_ITEM.title}
-        </div>
+          className="sidebar-overlay"
+          onClick={onClose}
+          aria-hidden="true"
+        />
       )}
-    </div>
+      <div className={`sidebar${isOpen ? ' open' : ''}`}>
+        {NAV_ITEMS.map(item => (
+          <div
+            key={item.id}
+            className={`sidebar-item ${isActive(item.path) ? 'active' : ''}`}
+            onClick={() => handleNav(item.path)}
+          >
+            {item.icon}
+            {item.title}
+          </div>
+        ))}
+        <div className="sidebar-spacer" />
+        {user?.role === 'admin' && (
+          <div
+            className={`sidebar-item ${isActive(ADMIN_ITEM.path) ? 'active' : ''}`}
+            onClick={() => handleNav(ADMIN_ITEM.path)}
+          >
+            {ADMIN_ITEM.icon}
+            {ADMIN_ITEM.title}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

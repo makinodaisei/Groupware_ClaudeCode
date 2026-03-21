@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { HashRouter as BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './components/Toast';
@@ -12,15 +13,16 @@ import Admin from './pages/Admin';
 
 function AppLayout() {
   const { user } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   if (!user) return <Login />;
 
   return (
     <div id="app" style={{ display: 'flex' }}>
       <div className="topbar-wrapper" style={{ position:'fixed', top:0, left:0, right:0, zIndex:50 }}>
-        <TopBar />
+        <TopBar menuOpen={menuOpen} onMenuToggle={() => setMenuOpen(o => !o)} />
       </div>
       <div className="app-body" style={{ marginTop: 'var(--topbar-h)', width:'100%', display:'flex', height:'calc(100vh - var(--topbar-h))' }}>
-        <Sidebar />
+        <Sidebar isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
         <main className="main-content">
           <div className="main-inner">
             <Routes>
