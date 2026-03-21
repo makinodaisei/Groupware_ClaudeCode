@@ -8,7 +8,7 @@ export default function TopBar() {
 
   return (
     <div className="topbar">
-      <div className="topbar-logo">🏢</div>
+      <div className="topbar-logo">G</div>
       <div className="topbar-title">社内グループウェア</div>
       <div className="topbar-spacer" />
       <div className="topbar-user" onClick={() => setDropdownOpen(o => !o)}>
@@ -18,7 +18,7 @@ export default function TopBar() {
         {dropdownOpen && (
           <div className="topbar-dropdown open">
             <div className="topbar-dropdown-item danger" onClick={logout}>
-              🚪 ログアウト
+              ログアウト
             </div>
           </div>
         )}
