@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getFolders, createFolder, getFiles, getUploadUrl, getDownloadUrl } from '../lib/api';
-import { getFileIcon, formatSize } from '../lib/helpers';
+import { getFolders, createFolder, getFiles, getUploadUrl, getDownloadUrl, getUsers } from '../lib/api';
+import { getFileIcon, formatSize, timeAgo } from '../lib/helpers';
 import { useToast } from '../components/Toast';
+import EmptyState from '../components/EmptyState';
 
 function buildTree(folders) {
   const nodeMap = {};
@@ -46,6 +47,7 @@ export default function Documents() {
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [userMap, setUserMap] = useState({}); // { userId: name }
   const fileInputRef = useRef(null);
 
   const loadFolders = useCallback(async () => {
@@ -62,6 +64,16 @@ export default function Documents() {
   }, [showToast]);
 
   useEffect(() => { loadFolders(); }, [loadFolders]);
+
+  useEffect(() => {
+    getUsers()
+      .then(data => {
+        const map = {};
+        (data.users || []).forEach(u => { map[u.userId] = u.name || u.email; });
+        setUserMap(map);
+      })
+      .catch(() => {}); // fail silently
+  }, []);
 
   function selectFolder(folderId) {
     setCurrentFolderId(folderId);
@@ -181,7 +193,15 @@ export default function Documents() {
             </div>
           )}
           <div id="folder-tree-list">
-            <FolderTree nodes={tree} depth={0} currentFolderId={currentFolderId} onSelect={selectFolder} />
+            {tree.length === 0 ? (
+              <EmptyState
+                icon="document"
+                message="フォルダがありません"
+                action={{ label: '+ フォルダを作成', onClick: () => setShowFolderInput(true) }}
+              />
+            ) : (
+              <FolderTree nodes={tree} depth={0} currentFolderId={currentFolderId} onSelect={selectFolder} />
+            )}
           </div>
         </div>
 
@@ -213,19 +233,33 @@ export default function Documents() {
                 ? [1,2,3].map(i => <div key={i} className="skeleton skeleton-row" style={{ height: 80, borderRadius: 6 }} />)
                 : <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', gridColumn: '1/-1' }}>フォルダを選択してください</div>
             ) : (
-              <>
-                {files.map(f => (
-                  <div key={f.fileId} className="file-card" onClick={() => downloadFile(f.fileId)}>
-                    <div className="file-card-icon">{getFileIcon(f.name)}</div>
-                    <div className="file-card-name">{f.name}</div>
-                    <div className="file-card-size">{formatSize(f.size)}</div>
-                  </div>
-                ))}
-                <div className="file-card file-card-add" onClick={() => fileInputRef.current?.click()}>
-                  <div className="file-card-icon" style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>＋</div>
-                  <div className="file-card-name" style={{ color: 'var(--color-text-muted)' }}>追加</div>
+              files.length === 0 ? (
+                <div style={{ gridColumn: '1/-1' }}>
+                  <EmptyState
+                    icon="document"
+                    message="このフォルダにファイルはありません"
+                    action={{ label: 'ファイルをアップロード', onClick: () => fileInputRef.current?.click() }}
+                  />
                 </div>
-              </>
+              ) : (
+                <>
+                  {files.map(f => (
+                    <div key={f.fileId} className="file-card" onClick={() => downloadFile(f.fileId)}>
+                      <div className="file-card-icon">{getFileIcon(f.name)}</div>
+                      <div className="file-card-name">{f.name}</div>
+                      <div className="file-card-size">{formatSize(f.size)}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                        {userMap[f.uploadedBy] || f.uploadedBy || ''}
+                        {(f.updatedAt || f.createdAt) ? ` · ${timeAgo(f.updatedAt || f.createdAt)}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="file-card file-card-add" onClick={() => fileInputRef.current?.click()}>
+                    <div className="file-card-icon" style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>＋</div>
+                    <div className="file-card-name" style={{ color: 'var(--color-text-muted)' }}>追加</div>
+                  </div>
+                </>
+              )
             )}
           </div>
 
