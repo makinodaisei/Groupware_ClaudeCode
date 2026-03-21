@@ -570,21 +570,33 @@ tr:hover td { background: #fafbfc; }
     left: 0;
     height: calc(100vh - var(--topbar-h));
     transform: translateX(-100%);
-    transition: transform var(--transition-mid);
+    visibility: hidden;
+    transition: transform var(--transition-mid), visibility var(--transition-mid);
     z-index: 45;
   }
 
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
   }
 
   /* Semi-transparent overlay behind sidebar */
   .sidebar-overlay {
     position: fixed;
-    inset: 0;
     top: var(--topbar-h);
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: rgba(0, 0, 0, 0.4);
     z-index: 40;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--transition-mid);
+  }
+
+  .sidebar-overlay.visible {
+    pointer-events: auto;
+    opacity: 1;
   }
 
   /* Main content takes full width on mobile */

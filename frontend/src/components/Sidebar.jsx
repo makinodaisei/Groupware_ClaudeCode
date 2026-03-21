@@ -76,13 +76,11 @@ export default function Sidebar({ isOpen, onClose }) {
   return (
     <>
       {/* Overlay — mobile only, closes menu on tap */}
-      {isOpen && (
-        <div
-          className="sidebar-overlay"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-      )}
+      <div
+        className={`sidebar-overlay${isOpen ? ' visible' : ''}`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <div className={`sidebar${isOpen ? ' open' : ''}`}>
         {NAV_ITEMS.map(item => (
           <div
