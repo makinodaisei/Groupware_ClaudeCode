@@ -1,16 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../lib/api';
-import { toISO, fromISO } from '../lib/helpers';
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule } from '../lib/api';
+import { toISO, fromISO, todayLocalStr } from '../lib/helpers';
 import { useToast } from '../components/Toast';
 import Drawer from '../components/Drawer';
 import DatePicker from '../components/DatePicker';
 import TimeSelect from '../components/TimeSelect';
 import WeekView from '../components/WeekView';
 
-function todayStr() {
-  const n = new Date();
-  return `${n.getFullYear()}/${String(n.getMonth()+1).padStart(2,'0')}/${String(n.getDate()).padStart(2,'0')}`;
-}
 
 function getMonday(date) {
   const d = new Date(date);
@@ -59,7 +55,7 @@ export default function Schedule() {
     try {
       if (view === 'month') {
         const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
-        const data = await api('GET', `/schedules?month=${monthStr}`);
+        const data = await getSchedules({ month: monthStr });
         setEvents(data.events || []);
       } else {
         // Fetch week: query by month(s) that overlap the week
@@ -69,7 +65,7 @@ export default function Schedule() {
           d.setDate(d.getDate() + i);
           months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
         }
-        const results = await Promise.all([...months].map(mo => api('GET', `/schedules?month=${mo}`)));
+        const results = await Promise.all([...months].map(mo => getSchedules({ month: mo })));
         const all = results.flatMap(r => r.events || []);
         // Deduplicate by eventId
         const seen = new Set();
@@ -105,34 +101,24 @@ export default function Schedule() {
     const end = toISO(form.endDate, form.endTime);
     if (new Date(end) <= new Date(start)) throw '終了時刻は開始時刻より後にしてください';
     if (editEvent) {
-      const res = await api('PUT', `/schedules/${editEvent.eventId}`, { title: fd.title.trim(), location: fd.location || '', startDatetime: start, endDatetime: end, isPublic: !!form.isPublic });
-      if (res.error) throw res.message || 'エラーが発生しました';
+      await updateSchedule(editEvent.eventId, { title: fd.title.trim(), location: fd.location || '', startDatetime: start, endDatetime: end, isPublic: !!form.isPublic });
       showToast('スケジュールを更新しました', 'success');
     } else {
-      const res = await api('POST', '/schedules', { title: fd.title.trim(), location: fd.location || '', startDatetime: start, endDatetime: end, isPublic: !!form.isPublic });
-      if (res.error) throw res.message || 'エラーが発生しました';
+      await createSchedule({ title: fd.title.trim(), location: fd.location || '', startDatetime: start, endDatetime: end, isPublic: !!form.isPublic });
       showToast('スケジュールを追加しました', 'success');
     }
     loadEvents();
   }
 
   async function handleDelete(id) {
-    const res = await api('DELETE', `/schedules/${id}`);
-    if (res && res.error) throw res.message || '削除に失敗しました';
+    await deleteSchedule(id);
     showToast('スケジュールを削除しました', 'success');
     loadEvents();
   }
 
   async function handleEventMove(event, startISO, endISO) {
     try {
-      const res = await api('PUT', `/schedules/${event.eventId}`, {
-        title: event.title,
-        location: event.location || '',
-        startDatetime: startISO,
-        endDatetime: endISO,
-        isPublic: !!event.isPublic,
-      });
-      if (res.error) throw res.message;
+      await updateSchedule(event.eventId, { startDatetime: startISO, endDatetime: endISO });
       showToast('スケジュールを移動しました', 'success');
       loadEvents();
     } catch {
@@ -177,7 +163,7 @@ export default function Schedule() {
           >週</button>
         </div>
 
-        <button className="btn btn-primary" onClick={() => openAddDrawer(todayStr())}>＋ 追加</button>
+        <button className="btn btn-primary" onClick={() => openAddDrawer(todayLocalStr())}>＋ 追加</button>
       </div>
 
       {/* Month view */}
