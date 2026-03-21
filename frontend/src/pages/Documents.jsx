@@ -92,7 +92,7 @@ export default function Documents() {
     }
   }
 
-  async function createFolder() {
+  async function handleCreateFolder() {
     if (!newFolderName.trim()) return;
     const body = { name: newFolderName.trim() };
     if (currentFolderId) {
@@ -173,9 +173,9 @@ export default function Documents() {
           </div>
           {showFolderInput && (
             <div style={{ marginBottom: '0.5rem' }}>
-              <input className="folder-inline-input" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="フォルダ名" onKeyDown={e => e.key === 'Enter' && createFolder()} autoFocus />
+              <input className="folder-inline-input" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="フォルダ名" onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} autoFocus />
               <div style={{ display: 'flex', gap: '0.3rem' }}>
-                <button className="btn btn-primary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={createFolder}>作成</button>
+                <button className="btn btn-primary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={handleCreateFolder}>作成</button>
                 <button className="btn btn-secondary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={() => setShowFolderInput(false)}>キャンセル</button>
               </div>
             </div>
