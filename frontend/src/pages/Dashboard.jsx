@@ -128,7 +128,7 @@ export default function Dashboard() {
                 width: 28, height: 28, borderRadius: 6, flexShrink: 0,
                 background: item._type === 'schedule' ? '#eff6ff' : '#f0fdf4',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: item._type === 'schedule' ? 'var(--color-primary)' : '#16a34a',
+                color: item._type === 'schedule' ? 'var(--color-primary)' : 'var(--color-success)',
               }}>
                 {item._type === 'schedule'
                   ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>

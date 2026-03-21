@@ -62,6 +62,6 @@ export function timeAgo(isoString) {
   const hours = Math.floor(diff / 3600000);
   if (hours < 24) return `${hours}時間前`;
   const days = Math.floor(diff / 86400000);
-  if (days < 7) return `${days}日前`;
+  if (days <= 7) return `${days}日前`;
   return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
 }
