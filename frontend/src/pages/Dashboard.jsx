@@ -40,13 +40,7 @@ export default function Dashboard() {
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-    const todayPrefix = today; // YYYY-MM-DD for startsWith comparison
-
     // --- Stats ---
-    api('GET', `/schedules?month=${month}`)
-      .then(data => setStats(s => ({ ...s, events: data.count ?? (data.events || []).length })))
-      .catch(() => setStats(s => ({ ...s, events: '—' })));
-
     api('GET', '/documents/folders')
       .then(data => setStats(s => ({ ...s, docs: (data.folders || []).length })))
       .catch(() => setStats(s => ({ ...s, docs: '—' })));
@@ -61,15 +55,15 @@ export default function Dashboard() {
         api('GET', `/schedules?month=${month}`).catch(() => ({ events: [] })),
         api('GET', '/facilities').catch(() => ({ facilities: [] })),
       ]);
+      setStats(s => ({ ...s, events: schedData.count ?? (schedData.events || []).length }));
 
       // Filter schedules to today
       const todaySchedules = (schedData.events || [])
-        .filter(e => e.startDatetime && e.startDatetime.startsWith(todayPrefix))
+        .filter(e => e.startDatetime && e.startDatetime.startsWith(today))
         .map(e => ({ ...e, _type: 'schedule' }));
 
       // Fan-out reservations per reservable facility (facilityType !== 'group')
       const reservableFacilities = (facData.facilities || []).filter(f => f.facilityType !== 'group');
-      setStats(s => ({ ...s, reservations: null })); // will be updated below
 
       const resArrays = await Promise.all(
         reservableFacilities.map(f =>
