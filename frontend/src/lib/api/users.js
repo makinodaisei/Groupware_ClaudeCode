@@ -1,7 +1,7 @@
 import { api } from './client.js';
 
 export function getUsers(params = {}) {
-  const qs = params.limit ? `?limit=${params.limit}` : '';
+  const qs = Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
   return api('GET', `/users${qs}`);
 }
 
