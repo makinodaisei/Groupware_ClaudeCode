@@ -67,7 +67,7 @@ auth: Bearer {CognitoIdToken}
 | users[].userId | string | Cognito Sub（UUID） |
 | users[].email | string | メールアドレス |
 | users[].name | string | 表示名 |
-| users[].role | string | ロール（admin/user） |
+| users[].role | string | ロール（admin/editor/user） |
 | users[].status | string | Cognitoユーザーステータス |
 | users[].enabled | boolean | アカウント有効フラグ |
 | users[].createdAt | string | 作成日時 |
@@ -100,7 +100,7 @@ auth: Bearer {CognitoIdToken}
 |----------|-----|------|------|
 | email | string | ○ | メールアドレス |
 | name | string | ○ | 表示名 |
-| role | string | - | ロール（admin/user、デフォルト: user） |
+| role | string | - | ロール（admin/editor/user、デフォルト: user） |
 
 ### PUT /users/{userId}
 
