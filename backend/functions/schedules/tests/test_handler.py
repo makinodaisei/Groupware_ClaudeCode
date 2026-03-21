@@ -1,6 +1,7 @@
 """Unit tests for schedules handler."""
 import json
 import os
+import sys
 import pytest
 
 os.environ.setdefault("TABLE_NAME", "groupware-test")
@@ -9,8 +10,15 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "ap-northeast-1")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
 
+# Set up sys.path and import handler at module level with a unique name to avoid
+# collision with facilities/handler.py when both test modules are collected together.
+sys.path.insert(0, "backend/layers/common/python")
+sys.path.insert(0, "backend/functions/schedules")
+sys.modules.pop("handler", None)
+
 import boto3
 from moto import mock_aws
+from handler import lambda_handler
 
 
 def _make_event(method: str, path: str, body=None, query_params=None, user_id="user-123", groups=None) -> dict:
@@ -61,16 +69,12 @@ def aws_mock():
                 }
             ],
         )
+        import db_client
+        db_client._table = None
         yield
 
 
 def test_create_schedule_success():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/schedules")
-
-    from handler import lambda_handler
-
     event = _make_event(
         "POST", "/schedules",
         body={
@@ -88,24 +92,12 @@ def test_create_schedule_success():
 
 
 def test_create_schedule_missing_fields():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/schedules")
-
-    from handler import lambda_handler
-
     event = _make_event("POST", "/schedules", body={"title": "Incomplete"})
     result = lambda_handler(event, None)
     assert result["statusCode"] == 400
 
 
 def test_create_schedule_invalid_datetime():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/schedules")
-
-    from handler import lambda_handler
-
     event = _make_event(
         "POST", "/schedules",
         body={
@@ -119,12 +111,6 @@ def test_create_schedule_invalid_datetime():
 
 
 def test_list_schedules_monthly():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/schedules")
-
-    from handler import lambda_handler
-
     # First create a schedule
     create_event = _make_event(
         "POST", "/schedules",
@@ -148,12 +134,6 @@ def test_list_schedules_monthly():
 
 
 def test_options_returns_200():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/schedules")
-
-    from handler import lambda_handler
-
     event = _make_event("OPTIONS", "/schedules")
     result = lambda_handler(event, None)
     assert result["statusCode"] == 200

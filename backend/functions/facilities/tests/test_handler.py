@@ -1,6 +1,7 @@
 """Unit tests for facilities handler - focus on exclusive control logic."""
 import json
 import os
+import sys
 import pytest
 
 os.environ.setdefault("TABLE_NAME", "groupware-test")
@@ -9,8 +10,13 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "ap-northeast-1")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
 
+# Set up sys.path and import handler at module level.
+sys.path.insert(0, "backend/layers/common/python")
+sys.path.insert(0, "backend/functions/facilities")
+
 import boto3
 from moto import mock_aws
+from handler import lambda_handler
 
 
 def _make_event(method: str, path: str, body=None, query_params=None,
@@ -62,10 +68,12 @@ def aws_mock():
                 }
             ],
         )
+        import db_client
+        db_client._table = None
         yield
 
 
-def _create_facility(lambda_handler) -> str:
+def _create_facility() -> str:
     """Helper: create a facility as admin and return its ID."""
     event = _make_event(
         "POST", "/facilities",
@@ -78,12 +86,6 @@ def _create_facility(lambda_handler) -> str:
 
 
 def test_create_facility_admin_only():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/facilities")
-
-    from handler import lambda_handler
-
     # Non-admin should be rejected
     event = _make_event(
         "POST", "/facilities",
@@ -95,13 +97,7 @@ def test_create_facility_admin_only():
 
 
 def test_create_reservation_success():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/facilities")
-
-    from handler import lambda_handler
-
-    facility_id = _create_facility(lambda_handler)
+    facility_id = _create_facility()
 
     event = _make_event(
         "POST", f"/facilities/{facility_id}/reservations",
@@ -120,13 +116,7 @@ def test_create_reservation_success():
 
 def test_duplicate_reservation_rejected():
     """The same timeslot on the same facility must return 409."""
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/facilities")
-
-    from handler import lambda_handler
-
-    facility_id = _create_facility(lambda_handler)
+    facility_id = _create_facility()
     reservation_body = {
         "title": "First Meeting",
         "startDatetime": "2026-03-11T14:00:00+09:00",
@@ -154,13 +144,7 @@ def test_duplicate_reservation_rejected():
 
 
 def test_reservation_missing_fields():
-    import sys
-    sys.path.insert(0, "backend/layers/common/python")
-    sys.path.insert(0, "backend/functions/facilities")
-
-    from handler import lambda_handler
-
-    facility_id = _create_facility(lambda_handler)
+    facility_id = _create_facility()
     event = _make_event(
         "POST", f"/facilities/{facility_id}/reservations",
         body={"title": "Incomplete"}

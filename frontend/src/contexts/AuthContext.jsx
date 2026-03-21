@@ -1,5 +1,5 @@
-import { createContext, useContext, useState } from 'react';
-import { setAuthToken, clearAuthToken } from '../lib/api';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { setAuthToken, clearAuthToken, setUnauthorizedHandler } from '../lib/api';
 
 const AuthContext = createContext(null);
 
@@ -15,6 +15,14 @@ export function AuthProvider({ children }) {
     setUser(null);
     clearAuthToken();
   }
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      clearAuthToken();
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>
