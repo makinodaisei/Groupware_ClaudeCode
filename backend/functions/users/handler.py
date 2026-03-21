@@ -7,6 +7,8 @@ import re
 import auth
 import response
 from db_client import get_cognito_client
+from utils import get_method_and_path
+from router import Router
 from validators import parse_body, require_fields, sanitize_string
 
 logger = logging.getLogger()
@@ -16,11 +18,6 @@ USER_POOL_ID = os.environ.get("USER_POOL_ID", "")
 
 
 # ---------- Helpers ----------
-
-def _get_method_and_path(event: dict) -> tuple[str, str]:
-    ctx = event.get("requestContext", {}).get("http", {})
-    return ctx.get("method", ""), ctx.get("path", "")
-
 
 def _extract_user_id(path: str) -> str | None:
     match = re.search(r"/users/([^/]+)$", path)
@@ -63,7 +60,7 @@ def list_users(event: dict) -> dict:
 
 def get_user(event: dict) -> dict:
     caller_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     target_id = _extract_user_id(path)
 
     # Admin can get any user; regular user can only get themselves
@@ -129,7 +126,7 @@ def create_user(event: dict) -> dict:
 
 
 def update_user(event: dict) -> dict:
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     target_id = _extract_user_id(path)
     caller_id = auth.get_user_id(event)
 
@@ -165,7 +162,7 @@ def delete_user(event: dict) -> dict:
     if deny:
         return deny
 
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     target_id = _extract_user_id(path)
     caller_id = auth.get_user_id(event)
 
@@ -182,33 +179,16 @@ def delete_user(event: dict) -> dict:
 
 # ---------- Router ----------
 
+_router = Router()
+_router.add("GET",    r".*/users$",          list_users)
+_router.add("POST",   r".*/users$",          create_user)
+_router.add("GET",    r".*/users/[^/]+$",    get_user)
+_router.add("PUT",    r".*/users/[^/]+$",    update_user)
+_router.add("DELETE", r".*/users/[^/]+$",    delete_user)
+
+
 def lambda_handler(event: dict, context) -> dict:
     logger.info("Users event: method=%s path=%s",
                 event.get("requestContext", {}).get("http", {}).get("method"),
                 event.get("requestContext", {}).get("http", {}).get("path"))
-
-    method, path = _get_method_and_path(event)
-
-    try:
-        if method == "OPTIONS":
-            return response.ok({})
-
-        if path == "/users" or path.endswith("/users"):
-            if method == "GET":
-                return list_users(event)
-            if method == "POST":
-                return create_user(event)
-
-        if re.match(r".*/users/[^/]+$", path):
-            if method == "GET":
-                return get_user(event)
-            if method == "PUT":
-                return update_user(event)
-            if method == "DELETE":
-                return delete_user(event)
-
-        return response.not_found("Endpoint")
-
-    except Exception as e:
-        logger.exception("Unhandled error in users handler")
-        return response.server_error(str(e))
+    return _router.dispatch(event)
