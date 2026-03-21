@@ -11,6 +11,8 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from db_client import get_table, get_dynamodb_client
 from validators import is_valid_iso_datetime, parse_body, require_fields, sanitize_string
+from utils import now_iso, get_method_and_path
+from router import Router
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -20,11 +22,6 @@ LOCK_TTL_SECONDS = 300  # 5 minutes lock expiry for cleanup
 
 
 # ---------- Helpers ----------
-
-def _get_method_and_path(event: dict) -> tuple[str, str]:
-    ctx = event.get("requestContext", {}).get("http", {})
-    return ctx.get("method", ""), ctx.get("path", "")
-
 
 def _extract_ids(path: str) -> tuple[str | None, str | None]:
     """Extract facilityId and optional reservationId from path."""
@@ -38,10 +35,6 @@ def _extract_ids(path: str) -> tuple[str | None, str | None]:
     if match:
         return match.group(1), None
     return None, None
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _unix_timestamp(dt: datetime) -> int:
@@ -76,14 +69,10 @@ def _item_to_reservation(item: dict) -> dict:
 # ---------- Facility CRUD ----------
 
 def list_facilities(event: dict) -> dict:
+    from boto3.dynamodb.conditions import Attr
     table = get_table()
-    resp = table.query(
-        KeyConditionExpression=Key("PK").begins_with("FACILITY#") & Key("SK").eq("#METADATA"),
-    )
-    # DynamoDB doesn't support begins_with on PK directly; use scan with filter
     resp = table.scan(
-        FilterExpression="SK = :meta AND begins_with(PK, :prefix)",
-        ExpressionAttributeValues={":meta": "#METADATA", ":prefix": "FACILITY#"},
+        FilterExpression=Attr("PK").begins_with("FACILITY#") & Attr("SK").eq("#METADATA"),
     )
     facilities = [_item_to_facility(item) for item in resp.get("Items", [])]
     return response.ok({"facilities": facilities})
@@ -119,7 +108,7 @@ def create_facility(event: dict) -> dict:
         "description": sanitize_string(body.get("description", ""), 1000),
         "capacity": int(body.get("capacity", 1)),
         "location": sanitize_string(body.get("location", ""), 500),
-        "createdAt": _now_iso(),
+        "createdAt": now_iso(),
         "createdBy": auth.get_user_id(event),
     }
     get_table().put_item(Item=item)
@@ -130,7 +119,7 @@ def create_facility(event: dict) -> dict:
 
 def list_reservations(event: dict) -> dict:
     """List reservations for a facility or by date via ReservationByDateIndex."""
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     facility_id, _ = _extract_ids(path)
     params = event.get("queryStringParameters") or {}
     date = params.get("date")  # YYYY-MM-DD
@@ -159,7 +148,7 @@ def list_reservations(event: dict) -> dict:
 def create_reservation(event: dict) -> dict:
     """Create a reservation with exclusive control via TransactWriteItems."""
     user_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     facility_id, _ = _extract_ids(path)
 
     body = parse_body(event)
@@ -201,7 +190,7 @@ def create_reservation(event: dict) -> dict:
         "reservedBy": user_id,
         "attendees": body.get("attendees", []),
         "notes": sanitize_string(body.get("notes", ""), 2000),
-        "createdAt": _now_iso(),
+        "createdAt": now_iso(),
         # GSI2 for ReservationByDateIndex
         "gsi2pk": f"RESERVATION#{date_key}",
         "gsi2sk": f"{facility_id}#{start_time}",
@@ -272,7 +261,7 @@ def _serialize_for_transact(item: dict) -> dict:
 
 def delete_reservation(event: dict) -> dict:
     user_id = auth.get_user_id(event)
-    _, path = _get_method_and_path(event)
+    _, path = get_method_and_path(event)
     facility_id, reservation_id = _extract_ids(path)
 
     table = get_table()
@@ -303,43 +292,17 @@ def delete_reservation(event: dict) -> dict:
 
 # ---------- Router ----------
 
+_router = Router()
+_router.add("GET",    r".*/facilities$",                               list_facilities)
+_router.add("POST",   r".*/facilities$",                               create_facility)
+_router.add("GET",    r".*/facilities/[^/]+$",                         get_facility)
+_router.add("GET",    r".*/facilities/[^/]+/reservations$",            list_reservations)
+_router.add("POST",   r".*/facilities/[^/]+/reservations$",            create_reservation)
+_router.add("DELETE", r".*/facilities/[^/]+/reservations/[^/]+$",      delete_reservation)
+
+
 def lambda_handler(event: dict, context) -> dict:
     logger.info("Facilities event: method=%s path=%s",
                 event.get("requestContext", {}).get("http", {}).get("method"),
                 event.get("requestContext", {}).get("http", {}).get("path"))
-
-    method, path = _get_method_and_path(event)
-
-    try:
-        if method == "OPTIONS":
-            return response.ok({})
-
-        # /facilities
-        if re.match(r".*/facilities$", path):
-            if method == "GET":
-                return list_facilities(event)
-            if method == "POST":
-                return create_facility(event)
-
-        # /facilities/{id}
-        if re.match(r".*/facilities/[^/]+$", path):
-            if method == "GET":
-                return get_facility(event)
-
-        # /facilities/{id}/reservations
-        if re.match(r".*/facilities/[^/]+/reservations$", path):
-            if method == "GET":
-                return list_reservations(event)
-            if method == "POST":
-                return create_reservation(event)
-
-        # /facilities/{id}/reservations/{rid}
-        if re.match(r".*/facilities/[^/]+/reservations/[^/]+$", path):
-            if method == "DELETE":
-                return delete_reservation(event)
-
-        return response.not_found("Endpoint")
-
-    except Exception as e:
-        logger.exception("Unhandled error in facilities handler")
-        return response.server_error(str(e))
+    return _router.dispatch(event)
