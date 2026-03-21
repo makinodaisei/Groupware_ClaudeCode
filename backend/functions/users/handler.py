@@ -16,6 +16,8 @@ logger.setLevel(logging.INFO)
 
 USER_POOL_ID = os.environ.get("USER_POOL_ID", "")
 
+VALID_ROLES = ("admin", "editor", "user")
+
 
 # ---------- Helpers ----------
 
@@ -97,8 +99,8 @@ def create_user(event: dict) -> dict:
     email = sanitize_string(body["email"])
     name = sanitize_string(body["name"])
     role = body.get("role", "user")
-    if role not in ("admin", "user"):
-        return response.bad_request("role must be 'admin' or 'user'")
+    if role not in VALID_ROLES:
+        return response.bad_request(f"role must be one of: {', '.join(VALID_ROLES)}")
 
     cognito = get_cognito_client()
     try:
@@ -113,7 +115,7 @@ def create_user(event: dict) -> dict:
             ],
             DesiredDeliveryMediums=["EMAIL"],
         )
-        group = "admin" if role == "admin" else "user"
+        group = role  # admin, editor, user それぞれ同名グループ
         cognito.admin_add_user_to_group(
             UserPoolId=USER_POOL_ID,
             Username=email,
@@ -139,13 +141,38 @@ def update_user(event: dict) -> dict:
 
     if "name" in body:
         attrs.append({"Name": "name", "Value": sanitize_string(body["name"])})
+
     if "role" in body:
         if not auth.is_admin(event):
             return response.forbidden("Only admins can change roles")
         role = body["role"]
-        if role not in ("admin", "user"):
-            return response.bad_request("role must be 'admin' or 'user'")
+        if role not in VALID_ROLES:
+            return response.bad_request(f"role must be one of: {', '.join(VALID_ROLES)}")
         attrs.append({"Name": "custom:role", "Value": role})
+
+        # Cognito グループのメンバーシップを同期する
+        for old_group in VALID_ROLES:
+            try:
+                cognito.admin_remove_user_from_group(
+                    UserPoolId=USER_POOL_ID,
+                    Username=target_id,
+                    GroupName=old_group,
+                )
+            except Exception:
+                pass  # グループ未所属の場合は無視
+        cognito.admin_add_user_to_group(
+            UserPoolId=USER_POOL_ID,
+            Username=target_id,
+            GroupName=role,
+        )
+
+    if "enabled" in body:
+        if not auth.is_admin(event):
+            return response.forbidden("Only admins can enable/disable users")
+        if body["enabled"]:
+            cognito.admin_enable_user(UserPoolId=USER_POOL_ID, Username=target_id)
+        else:
+            cognito.admin_disable_user(UserPoolId=USER_POOL_ID, Username=target_id)
 
     if attrs:
         cognito.admin_update_user_attributes(
