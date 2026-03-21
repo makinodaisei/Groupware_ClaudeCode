@@ -136,6 +136,13 @@ def update_user(event: dict) -> dict:
         return response.forbidden()
 
     body = parse_body(event)
+    name = body.get("name")
+    role = body.get("role")
+    enabled = body.get("enabled")
+
+    if name is None and role is None and enabled is None:
+        return response.bad_request("No fields to update")
+
     cognito = get_cognito_client()
     attrs = []
 
@@ -158,8 +165,10 @@ def update_user(event: dict) -> dict:
                     Username=target_id,
                     GroupName=old_group,
                 )
+            except cognito.exceptions.ResourceNotFoundException:
+                pass  # user not in this group
             except Exception:
-                pass  # グループ未所属の場合は無視
+                raise  # propagate unexpected errors
         cognito.admin_add_user_to_group(
             UserPoolId=USER_POOL_ID,
             Username=target_id,

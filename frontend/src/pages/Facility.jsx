@@ -26,9 +26,10 @@ export default function Facility() {
     try {
       const data = await getFacilities();
       const facs = data.facilities || [];
-      setFacilities(facs);
+      const reservable = facs.filter(f => f.facilityType !== 'group');
+      setFacilities(reservable);
       const resMap = {};
-      await Promise.all(facs.map(f =>
+      await Promise.all(reservable.map(f =>
         getReservations(f.facilityId, today)
           .then(r => { resMap[f.facilityId] = r.reservations || []; })
           .catch(() => { resMap[f.facilityId] = []; })

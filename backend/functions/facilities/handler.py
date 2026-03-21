@@ -99,6 +99,10 @@ def create_facility(event: dict) -> dict:
     if missing:
         return response.bad_request(f"Missing required fields: {', '.join(missing)}")
 
+    facility_type = body.get("facilityType", "facility")
+    if facility_type not in ("group", "facility"):
+        return response.bad_request("facilityType must be 'group' or 'facility'")
+
     facility_id = str(uuid.uuid4())
     item = {
         "PK": f"FACILITY#{facility_id}",
@@ -110,7 +114,7 @@ def create_facility(event: dict) -> dict:
         "capacity": int(body.get("capacity", 1)),
         "location": sanitize_string(body.get("location", ""), 500),
         "parentId": body.get("parentId", "ROOT"),
-        "facilityType": body.get("facilityType", "facility"),
+        "facilityType": facility_type,
         "createdAt": now_iso(),
         "createdBy": auth.get_user_id(event),
     }
@@ -177,9 +181,10 @@ def delete_facility(event: dict) -> dict:
     facility_id, _ = _extract_ids(path)
     table = get_table()
 
-    # 子施設チェック
+    # 子施設チェック (Limit caps items examined per page; pagination stops on first match)
     children = table.scan(
         FilterExpression=Attr("parentId").eq(facility_id) & Attr("SK").eq("#METADATA"),
+        Limit=100,
     )
     if children.get("Items"):
         return response.conflict("Cannot delete a group that has child facilities")
