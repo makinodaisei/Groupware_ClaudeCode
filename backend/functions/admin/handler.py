@@ -241,9 +241,9 @@ def run_backfill(event: dict) -> dict:
 # ---------- Router ----------
 
 router = Router()
-router.add("GET",  r"/admin/relation-rules", get_relation_rules)
-router.add("POST", r"/admin/cleanse",         run_cleanse)
-router.add("POST", r"/admin/backfill",        run_backfill)
+router.add("GET",  r".*/admin/relation-rules$", get_relation_rules)
+router.add("POST", r".*/admin/cleanse$",         run_cleanse)
+router.add("POST", r".*/admin/backfill$",        run_backfill)
 
 
 def lambda_handler(event: dict, context) -> dict:

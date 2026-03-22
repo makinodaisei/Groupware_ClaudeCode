@@ -121,10 +121,10 @@ def delete_facility_type(event: dict) -> dict:
 # ---------- Router ----------
 
 router = Router()
-router.add("GET",    r"/facility-types",        list_facility_types)
-router.add("POST",   r"/facility-types",        create_facility_type)
-router.add("PUT",    r"/facility-types/[^/]+",  update_facility_type)
-router.add("DELETE", r"/facility-types/[^/]+",  delete_facility_type)
+router.add("GET",    r".*/facility-types$",        list_facility_types)
+router.add("POST",   r".*/facility-types$",        create_facility_type)
+router.add("PUT",    r".*/facility-types/[^/]+$",  update_facility_type)
+router.add("DELETE", r".*/facility-types/[^/]+$",  delete_facility_type)
 
 
 def lambda_handler(event: dict, context) -> dict:

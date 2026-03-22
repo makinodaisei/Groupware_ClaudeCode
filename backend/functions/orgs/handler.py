@@ -137,11 +137,11 @@ def delete_org(event: dict) -> dict:
 # ---------- Router ----------
 
 router = Router()
-router.add("GET",    r"/orgs",         list_orgs)
-router.add("POST",   r"/orgs",         create_org)
-router.add("GET",    r"/orgs/[^/]+",   get_org)
-router.add("PUT",    r"/orgs/[^/]+",   update_org)
-router.add("DELETE", r"/orgs/[^/]+",   delete_org)
+router.add("GET",    r".*/orgs$",         list_orgs)
+router.add("POST",   r".*/orgs$",         create_org)
+router.add("GET",    r".*/orgs/[^/]+$",   get_org)
+router.add("PUT",    r".*/orgs/[^/]+$",   update_org)
+router.add("DELETE", r".*/orgs/[^/]+$",   delete_org)
 
 
 def lambda_handler(event: dict, context) -> dict:
