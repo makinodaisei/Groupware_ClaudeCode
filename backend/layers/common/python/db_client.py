@@ -15,6 +15,11 @@ def get_table():
     return _table
 
 
+def get_dynamodb_client():
+    """Return DynamoDB low-level client."""
+    return boto3.client("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-northeast-1"))
+
+
 def get_s3_client():
     """Return S3 client."""
     return boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-1"))

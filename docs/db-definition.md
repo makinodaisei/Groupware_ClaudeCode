@@ -59,7 +59,7 @@ last_updated: 2026-03-08
 | userId | String | ○ | CognitoのSub（UUID） | abc-123-... |
 | email | String | ○ | メールアドレス | user@example.com |
 | name | String | ○ | 表示名 | 田中 太郎 |
-| role | String | ○ | ロール（admin/user） | user |
+| role | String | ○ | ロール（admin/editor/user） | user |
 | createdAt | String | ○ | 作成日時（ISO-8601） | 2026-03-08T00:00:00+00:00 |
 | updatedAt | String | ○ | 更新日時（ISO-8601） | 2026-03-08T00:00:00+00:00 |
 | gsi3pk | String | ○ | GSI3用PK（email） | user@example.com |
@@ -100,6 +100,8 @@ last_updated: 2026-03-08
 | location | String | - | 場所（最大500文字） | 3F 東棟 |
 | createdBy | String | ○ | 作成者userId | abc-123 |
 | createdAt | String | ○ | 作成日時 | 2026-03-08T00:00:00+00:00 |
+| `parentId` | String | - | 親施設のfacilityId。なければ `ROOT` | `ROOT` |
+| `facilityType` | String | - | `group`（親グループ）または `facility`（予約可能施設） | `facility` |
 
 ## 属性定義 - 施設予約
 

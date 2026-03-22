@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../lib/api';
-import { getFileIcon, formatSize } from '../lib/helpers';
+import { getFolders, createFolder, getFiles, getUploadUrl, getDownloadUrl, getUsers } from '../lib/api';
+import { getFileIcon, formatSize, timeAgo } from '../lib/helpers';
 import { useToast } from '../components/Toast';
+import EmptyState from '../components/EmptyState';
 
 function buildTree(folders) {
   const nodeMap = {};
@@ -46,11 +47,13 @@ export default function Documents() {
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [userMap, setUserMap] = useState({}); // { userId: name }
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
   const loadFolders = useCallback(async () => {
     try {
-      const data = await api('GET', '/documents/folders');
+      const data = await getFolders();
       const fList = data.folders || [];
       const fMap = {};
       fList.forEach(f => { fMap[f.folderId] = f; });
@@ -62,6 +65,16 @@ export default function Documents() {
   }, [showToast]);
 
   useEffect(() => { loadFolders(); }, [loadFolders]);
+
+  useEffect(() => {
+    getUsers()
+      .then(data => {
+        const map = {};
+        (data.users || []).forEach(u => { map[u.userId] = u.name || u.email; });
+        setUserMap(map);
+      })
+      .catch(() => {}); // fail silently
+  }, []);
 
   function selectFolder(folderId) {
     setCurrentFolderId(folderId);
@@ -84,7 +97,7 @@ export default function Documents() {
   async function loadFiles(folderId) {
     setFiles(null);
     try {
-      const data = await api('GET', `/documents/folders/${folderId}/files`);
+      const data = await getFiles(folderId);
       setFiles(data.files || []);
     } catch {
       setFiles([]);
@@ -92,7 +105,7 @@ export default function Documents() {
     }
   }
 
-  async function createFolder() {
+  async function handleCreateFolder() {
     if (!newFolderName.trim()) return;
     const body = { name: newFolderName.trim() };
     if (currentFolderId) {
@@ -101,7 +114,7 @@ export default function Documents() {
       body.parentPath = f?.path || '/';
     }
     try {
-      await api('POST', '/documents/folders', body);
+      await createFolder(body);
       setNewFolderName('');
       setShowFolderInput(false);
       showToast('フォルダを作成しました', 'success');
@@ -114,7 +127,7 @@ export default function Documents() {
   async function downloadFile(fileId) {
     if (!currentFolderId) return;
     try {
-      const data = await api('GET', `/documents/folders/${currentFolderId}/files/${fileId}/download-url`);
+      const data = await getDownloadUrl(currentFolderId, fileId);
       if (data.downloadUrl) window.open(data.downloadUrl, '_blank');
       else showToast('ダウンロードURLの取得に失敗しました', 'error');
     } catch {
@@ -129,10 +142,26 @@ export default function Documents() {
     uploadFile(file);
   }
 
+  function handleDragOver(e) {
+    if (!currentFolderId) return;
+    e.preventDefault();
+    setIsDragOver(true);
+  }
+  function handleDragLeave(e) {
+    if (!e.currentTarget.contains(e.relatedTarget)) setIsDragOver(false);
+  }
+  function handleDrop(e) {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!currentFolderId) return;
+    const file = e.dataTransfer.files[0];
+    if (file) uploadFile(file);
+  }
+
   async function uploadFile(file) {
     let uploadData;
     try {
-      uploadData = await api('POST', `/documents/folders/${currentFolderId}/files/upload-url`, {
+      uploadData = await getUploadUrl(currentFolderId, {
         name: file.name, contentType: file.type || 'application/octet-stream', size: file.size
       });
     } catch {
@@ -163,8 +192,16 @@ export default function Documents() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: '1.25rem', fontSize: '1.1rem', fontWeight: 700 }}>文書管理</h2>
-      <div className="doc-layout">
+      <div className="page-header">
+        <h2>文書管理</h2>
+      </div>
+      <div
+        className="doc-layout"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        style={isDragOver ? { outline: '2px dashed var(--color-primary)', outlineOffset: 2 } : undefined}
+      >
         {/* Folder tree */}
         <div className="folder-tree">
           <div className="folder-tree-header">
@@ -173,15 +210,23 @@ export default function Documents() {
           </div>
           {showFolderInput && (
             <div style={{ marginBottom: '0.5rem' }}>
-              <input className="folder-inline-input" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="フォルダ名" onKeyDown={e => e.key === 'Enter' && createFolder()} autoFocus />
+              <input className="folder-inline-input" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="フォルダ名" onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} autoFocus />
               <div style={{ display: 'flex', gap: '0.3rem' }}>
-                <button className="btn btn-primary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={createFolder}>作成</button>
+                <button className="btn btn-primary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={handleCreateFolder}>作成</button>
                 <button className="btn btn-secondary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }} onClick={() => setShowFolderInput(false)}>キャンセル</button>
               </div>
             </div>
           )}
           <div id="folder-tree-list">
-            <FolderTree nodes={tree} depth={0} currentFolderId={currentFolderId} onSelect={selectFolder} />
+            {tree.length === 0 ? (
+              <EmptyState
+                icon="document"
+                message="フォルダがありません"
+                action={{ label: '+ フォルダを作成', onClick: () => setShowFolderInput(true) }}
+              />
+            ) : (
+              <FolderTree nodes={tree} depth={0} currentFolderId={currentFolderId} onSelect={selectFolder} />
+            )}
           </div>
         </div>
 
@@ -213,19 +258,33 @@ export default function Documents() {
                 ? [1,2,3].map(i => <div key={i} className="skeleton skeleton-row" style={{ height: 80, borderRadius: 6 }} />)
                 : <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', gridColumn: '1/-1' }}>フォルダを選択してください</div>
             ) : (
-              <>
-                {files.map(f => (
-                  <div key={f.fileId} className="file-card" onClick={() => downloadFile(f.fileId)}>
-                    <div className="file-card-icon">{getFileIcon(f.name)}</div>
-                    <div className="file-card-name">{f.name}</div>
-                    <div className="file-card-size">{formatSize(f.size)}</div>
-                  </div>
-                ))}
-                <div className="file-card file-card-add" onClick={() => fileInputRef.current?.click()}>
-                  <div className="file-card-icon" style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>＋</div>
-                  <div className="file-card-name" style={{ color: 'var(--color-text-muted)' }}>追加</div>
+              files.length === 0 ? (
+                <div style={{ gridColumn: '1/-1' }}>
+                  <EmptyState
+                    icon="document"
+                    message="このフォルダにファイルはありません"
+                    action={{ label: 'ファイルをアップロード', onClick: () => fileInputRef.current?.click() }}
+                  />
                 </div>
-              </>
+              ) : (
+                <>
+                  {files.map(f => (
+                    <div key={f.fileId} className="file-card" onClick={() => downloadFile(f.fileId)}>
+                      <div className="file-card-icon">{getFileIcon(f.name)}</div>
+                      <div className="file-card-name">{f.name}</div>
+                      <div className="file-card-size">{formatSize(f.size)}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                        {userMap[f.uploadedBy] || f.uploadedBy || ''}
+                        {(f.updatedAt || f.createdAt) ? ` · ${timeAgo(f.updatedAt || f.createdAt)}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="file-card file-card-add" onClick={() => fileInputRef.current?.click()}>
+                    <div className="file-card-icon" style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>＋</div>
+                    <div className="file-card-name" style={{ color: 'var(--color-text-muted)' }}>追加</div>
+                  </div>
+                </>
+              )
             )}
           </div>
 
