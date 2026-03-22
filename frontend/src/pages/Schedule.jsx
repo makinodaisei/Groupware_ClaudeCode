@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getSchedules, createSchedule, updateSchedule, deleteSchedule } from '../lib/api';
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule, getUsers, getOrgs } from '../lib/api';
 import { toISO, fromISO, todayLocalStr } from '../lib/helpers';
 import { useToast } from '../components/Toast';
 import Drawer from '../components/Drawer';
 import DatePicker from '../components/DatePicker';
 import TimeSelect from '../components/TimeSelect';
 import WeekView from '../components/WeekView';
+import OrgView from '../components/OrgView';
 
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -29,7 +30,9 @@ function weekLabel(weekStart) {
 
 export default function Schedule() {
   const showToast = useToast();
-  const [view, setView] = useState('week'); // 'month' | 'week' | 'compact'
+  const [view, setView] = useState('week'); // 'month' | 'week' | 'compact' | 'org'
+  const [orgViewUsers, setOrgViewUsers] = useState(null); // null = loading
+  const [orgViewOrgs, setOrgViewOrgs] = useState([]);
   const [weekStartDay, setWeekStartDay] = useState(1); // 0=Sun … 6=Sat
 
   // Month view state
@@ -147,7 +150,18 @@ export default function Schedule() {
     setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() + days); return n; });
   }
 
-  const isWeekLike = view === 'week' || view === 'compact';
+  // Load users+orgs when switching to org view
+  useEffect(() => {
+    if (view !== 'org') return;
+    Promise.all([getUsers(), getOrgs()])
+      .then(([uData, oData]) => {
+        setOrgViewUsers(uData.users || []);
+        setOrgViewOrgs(oData.orgs || []);
+      })
+      .catch(() => showToast('組織ビューのデータ取得に失敗しました', 'error'));
+  }, [view, showToast]);
+
+  const isWeekLike = view === 'week' || view === 'compact' || view === 'org';
 
   return (
     <div>
@@ -201,6 +215,7 @@ export default function Schedule() {
             <button className={`view-toggle-btn${view === 'month' ? ' active' : ''}`} onClick={() => setView('month')}>月</button>
             <button className={`view-toggle-btn${view === 'week' ? ' active' : ''}`} onClick={() => setView('week')}>週</button>
             <button className={`view-toggle-btn${view === 'compact' ? ' active' : ''}`} onClick={() => setView('compact')}>圧縮</button>
+            <button className={`view-toggle-btn${view === 'org' ? ' active' : ''}`} onClick={() => setView('org')}>組織</button>
           </div>
           <button className="btn btn-primary" onClick={() => openAddDrawer(todayLocalStr())}>＋ 追加</button>
         </div>
@@ -236,7 +251,7 @@ export default function Schedule() {
       )}
 
       {/* Week / Compact view */}
-      {isWeekLike && (
+      {(view === 'week' || view === 'compact') && (
         <WeekView
           events={events}
           weekStart={weekStart}
@@ -244,6 +259,19 @@ export default function Schedule() {
           onSlotClick={(dateStr, timeStr) => openAddDrawer(dateStr, timeStr)}
           onEventClick={openEditDrawer}
           onEventMove={handleEventMove}
+        />
+      )}
+
+      {/* Org view */}
+      {view === 'org' && (
+        <OrgView
+          events={events}
+          users={orgViewUsers ?? []}
+          orgs={orgViewOrgs}
+          loading={orgViewUsers === null}
+          weekStart={weekStart}
+          onSlotClick={(dateStr, timeStr) => openAddDrawer(dateStr, timeStr)}
+          onEventClick={openEditDrawer}
         />
       )}
 

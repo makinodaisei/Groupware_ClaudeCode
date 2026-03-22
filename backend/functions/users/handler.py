@@ -53,10 +53,8 @@ def _extract_user_from_cognito(user: dict) -> dict:
 # ---------- Route Handlers ----------
 
 def list_users(event: dict) -> dict:
-    deny = auth.require_admin(event)
-    if deny:
-        return deny
-
+    # All authenticated users can list users (org/people view needs this)
+    # Write operations (create/update/delete) remain admin-only
     cognito = get_cognito_client()
     params = event.get("queryStringParameters") or {}
     kwargs = {"UserPoolId": USER_POOL_ID, "Limit": int(params.get("limit", 60))}

@@ -658,6 +658,66 @@ tr:hover td { background: #fafbfc; }
 .week-compact-time { font-size: 0.62rem; opacity: 0.8; line-height: 1.2; }
 .week-compact-title { font-size: 0.72rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
 
+/* === 組織ビュー === */
+.org-view { width: 100%; overflow-x: auto; }
+.org-view .week-header {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-surface);
+  border-bottom: 2px solid var(--color-border);
+}
+.org-view .week-day-header {
+  flex: 1;
+  min-width: 80px;
+  text-align: center;
+  padding: 6px 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.org-view-group-header {
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.org-view-row {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  min-height: 40px;
+}
+.org-view-row:hover { background: #f8fafc; }
+.org-view-user-cell {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text);
+  border-right: 1px solid var(--color-border);
+  word-break: break-all;
+}
+.org-view-day-cell {
+  flex: 1;
+  min-width: 80px;
+  padding: 4px;
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+.org-view-user-cell + .org-view-day-cell { border-left: none; }
+.org-view-day-cell.today-col { background: #fffbeb; }
+.org-view-day-cell.today-col:hover { background: #fef9c3; }
+
 /* === レスポンシブ === */
 @media (max-width: 768px) {
   .login-left { display: none; }

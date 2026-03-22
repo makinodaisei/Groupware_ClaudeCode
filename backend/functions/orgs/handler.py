@@ -32,9 +32,7 @@ def _item_to_org(item: dict) -> dict:
 
 
 def list_orgs(event: dict) -> dict:
-    deny = auth.require_admin(event)
-    if deny:
-        return deny
+    # All authenticated users can list orgs (org view needs this)
     table = get_table()
     resp = table.query(
         IndexName="DateRangeIndex",
