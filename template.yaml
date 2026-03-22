@@ -295,6 +295,115 @@ Resources:
             Path: /facilities/{proxy+}
             Method: PUT
 
+  OrgsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "groupware-orgs-${Environment}"
+      CodeUri: backend/functions/orgs/
+      Handler: handler.lambda_handler
+      Description: Organization master CRUD
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroupwareTable
+      Events:
+        OrgsGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /orgs
+            Method: GET
+        OrgsPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /orgs
+            Method: POST
+        OrgsProxyGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /orgs/{proxy+}
+            Method: GET
+        OrgsProxyPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /orgs/{proxy+}
+            Method: PUT
+        OrgsProxyDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /orgs/{proxy+}
+            Method: DELETE
+
+  FacilityTypesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "groupware-facility-types-${Environment}"
+      CodeUri: backend/functions/facility_types/
+      Handler: handler.lambda_handler
+      Description: Facility type master CRUD
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroupwareTable
+      Events:
+        FacilityTypesGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facility-types
+            Method: GET
+        FacilityTypesPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facility-types
+            Method: POST
+        FacilityTypesProxyPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facility-types/{proxy+}
+            Method: PUT
+        FacilityTypesProxyDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /facility-types/{proxy+}
+            Method: DELETE
+
+  AdminFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "groupware-admin-${Environment}"
+      CodeUri: backend/functions/admin/
+      Handler: handler.lambda_handler
+      Description: Admin - relation rules, data cleansing, backfill
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroupwareTable
+      Events:
+        AdminRelationRules:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /admin/relation-rules
+            Method: GET
+        AdminCleanse:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /admin/cleanse
+            Method: POST
+        AdminBackfill:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroupwareApi
+            Path: /admin/backfill
+            Method: POST
+
   DocumentsFunction:
     Type: AWS::Serverless::Function
     Properties:
