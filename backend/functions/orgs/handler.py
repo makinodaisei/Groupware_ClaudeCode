@@ -6,8 +6,8 @@ import uuid
 import auth
 import response
 from db_client import get_table
-from utils import now_iso, get_method_and_path
 from router import Router
+from utils import get_method_and_path, now_iso
 from validators import parse_body, require_fields, sanitize_string
 
 logger = logging.getLogger()

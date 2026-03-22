@@ -1,11 +1,11 @@
 """Admin Lambda handler - relation rules, data cleansing, backfill."""
 import logging
 
+from boto3.dynamodb.conditions import Attr
+
 import auth
 import response
-from boto3.dynamodb.conditions import Attr
 from db_client import get_table
-from utils import get_method_and_path
 from router import Router
 from validators import parse_body
 
