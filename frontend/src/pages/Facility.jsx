@@ -37,9 +37,24 @@ function TimelineBar({ reservations }) {
     );
   }).filter(Boolean);
 
+  // Current time indicator (9:00–18:00 range)
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowPct = (nowMin - 540) / 540 * 100;
+  const showNow = nowPct >= 0 && nowPct <= 100;
+
   return (
     <div style={{ flex: 1 }}>
-      <div className="timeline-bar">{blocks}</div>
+      <div className="timeline-bar" style={{ position: 'relative' }}>
+        {blocks}
+        {showNow && (
+          <div style={{
+            position: 'absolute', top: 0, bottom: 0,
+            left: `${nowPct.toFixed(2)}%`,
+            width: 2, background: '#ef4444',
+            zIndex: 3, borderRadius: 1,
+          }} title="現在時刻" />
+        )}
+      </div>
       <div className="timeline-labels" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
         <span>9:00</span><span>12:00</span><span>15:00</span><span>18:00</span>
       </div>
@@ -49,6 +64,7 @@ function TimelineBar({ reservations }) {
 
 // Module-level component to avoid remounting on every render
 function FacilityRow({ f, reservations, onReserve }) {
+  const bookedCount = reservations.length;
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: '160px 1fr auto',
@@ -57,7 +73,17 @@ function FacilityRow({ f, reservations, onReserve }) {
       borderTop: '1px solid var(--color-border)',
     }}>
       <div style={{ fontSize: '0.875rem' }}>
-        <div>{f.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          {f.name}
+          {bookedCount > 0 && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              minWidth: 18, height: 18, padding: '0 5px',
+              background: '#fef3c7', color: '#92400e',
+              borderRadius: 9, fontSize: '0.65rem', fontWeight: 700,
+            }}>{bookedCount}</span>
+          )}
+        </div>
         {f.location && <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{f.location}</div>}
       </div>
       <TimelineBar reservations={reservations} />
@@ -137,7 +163,7 @@ export default function Facility() {
   if (facilities === null) {
     return (
       <div>
-        <h2 style={{ marginBottom: '1.25rem', fontSize: '1.1rem', fontWeight: 700 }}>施設予約</h2>
+        <div className="page-header"><h2>施設予約</h2></div>
         {[1,2,3].map(i => (
           <div key={i} className="skeleton skeleton-row" style={{ height: 48, borderRadius: 8, marginBottom: 10 }} />
         ))}
@@ -158,7 +184,9 @@ export default function Facility() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: '1.25rem', fontSize: '1.1rem', fontWeight: 700 }}>施設予約 — 今日の空き状況</h2>
+      <div className="page-header">
+        <h2>施設予約 — 今日の空き状況</h2>
+      </div>
 
       {reservableFacilities.length === 0 ? (
         <div className="card">

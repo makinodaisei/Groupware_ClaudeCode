@@ -48,6 +48,7 @@ export default function Documents() {
   const [newFolderName, setNewFolderName] = useState('');
   const [uploadProgress, setUploadProgress] = useState(null);
   const [userMap, setUserMap] = useState({}); // { userId: name }
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
   const loadFolders = useCallback(async () => {
@@ -141,6 +142,22 @@ export default function Documents() {
     uploadFile(file);
   }
 
+  function handleDragOver(e) {
+    if (!currentFolderId) return;
+    e.preventDefault();
+    setIsDragOver(true);
+  }
+  function handleDragLeave(e) {
+    if (!e.currentTarget.contains(e.relatedTarget)) setIsDragOver(false);
+  }
+  function handleDrop(e) {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!currentFolderId) return;
+    const file = e.dataTransfer.files[0];
+    if (file) uploadFile(file);
+  }
+
   async function uploadFile(file) {
     let uploadData;
     try {
@@ -175,8 +192,16 @@ export default function Documents() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: '1.25rem', fontSize: '1.1rem', fontWeight: 700 }}>文書管理</h2>
-      <div className="doc-layout">
+      <div className="page-header">
+        <h2>文書管理</h2>
+      </div>
+      <div
+        className="doc-layout"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        style={isDragOver ? { outline: '2px dashed var(--color-primary)', outlineOffset: 2 } : undefined}
+      >
         {/* Folder tree */}
         <div className="folder-tree">
           <div className="folder-tree-header">

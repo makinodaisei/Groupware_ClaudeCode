@@ -13,6 +13,28 @@ function dateStr(d) {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isMultiDay(ev) {
+  return ev.startDatetime.slice(0, 10) !== ev.endDatetime.slice(0, 10);
+}
+
+function getSpan(ev, days) {
+  const startD = ev.startDatetime.slice(0, 10);
+  const endD = ev.endDatetime.slice(0, 10);
+  const daysIso = days.map(isoDate);
+  let colStart = daysIso.findIndex(d => d >= startD);
+  if (colStart < 0) colStart = 0;
+  let colEnd = -1;
+  for (let i = daysIso.length - 1; i >= 0; i--) {
+    if (daysIso[i] <= endD) { colEnd = i; break; }
+  }
+  if (colEnd < 0) colEnd = daysIso.length - 1;
+  return { colStart: Math.max(0, colStart), colEnd: Math.min(6, colEnd) };
+}
+
 function eventStartMin(ev) {
   const d = new Date(ev.startDatetime);
   return d.getHours() * 60 + d.getMinutes();
@@ -38,16 +60,15 @@ function minToTimeStr(min) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-export default function WeekView({ events, weekStart, onSlotClick, onEventClick, onEventMove }) {
+export default function WeekView({ events, weekStart, onSlotClick, onEventClick, onEventMove, compact = false }) {
   const [nowMin, setNowMin] = useState(() => {
     const n = new Date();
     return n.getHours() * 60 + n.getMinutes();
   });
-  const [drag, setDrag] = useState(null); // { event, dayIdx, offsetY, previewDay, previewMin }
+  const [drag, setDrag] = useState(null);
   const colRefs = useRef([]);
   const bodyRef = useRef(null);
 
-  // Update current time every minute
   useEffect(() => {
     const id = setInterval(() => {
       const n = new Date();
@@ -56,12 +77,11 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
     return () => clearInterval(id);
   }, []);
 
-  // Scroll to 9:00 on mount
   useEffect(() => {
-    if (bodyRef.current) {
+    if (!compact && bodyRef.current) {
       bodyRef.current.scrollTop = minToY(9 * 60) - 40;
     }
-  }, []);
+  }, [compact]);
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
@@ -69,22 +89,31 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
     return d;
   });
 
-  const today = dateStr(new Date());
+  const todayStr = dateStr(new Date());
   const showNowLine = nowMin >= START_HOUR * 60 && nowMin < END_HOUR * 60;
 
-  // Group events by day index
-  const eventsByDay = {};
+  // Separate multi-day and single-day events
+  const allDayEvents = [];
+  const timedEventsByDay = {};
   events.forEach(ev => {
-    const d = new Date(ev.startDatetime);
-    const ds = dateStr(d);
-    const idx = days.findIndex(day => dateStr(day) === ds);
-    if (idx >= 0) {
-      (eventsByDay[idx] = eventsByDay[idx] || []).push(ev);
+    if (isMultiDay(ev)) {
+      const span = getSpan(ev, days);
+      if (span.colStart <= span.colEnd) {
+        allDayEvents.push({ ...ev, ...span });
+      }
+    } else {
+      const d = new Date(ev.startDatetime);
+      const ds = dateStr(d);
+      const idx = days.findIndex(day => dateStr(day) === ds);
+      if (idx >= 0) {
+        (timedEventsByDay[idx] = timedEventsByDay[idx] || []).push(ev);
+      }
     }
   });
 
   // --- Drag handlers ---
   function handleEventMouseDown(e, ev, dayIdx) {
+    if (compact) return;
     e.preventDefault();
     e.stopPropagation();
     const col = colRefs.current[dayIdx];
@@ -96,26 +125,19 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
 
   function handleMouseMove(e) {
     if (!drag) return;
-    // Find hovered day column
     let hoveredDay = drag.dayIdx;
     for (let i = 0; i < colRefs.current.length; i++) {
       const col = colRefs.current[i];
       if (!col) continue;
       const rect = col.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX < rect.right) {
-        hoveredDay = i;
-        break;
-      }
+      if (e.clientX >= rect.left && e.clientX < rect.right) { hoveredDay = i; break; }
     }
     const col = colRefs.current[hoveredDay];
     if (!col) return;
     const rect = col.getBoundingClientRect();
     const relY = e.clientY - rect.top - drag.offsetY;
     const dur = eventEndMin(drag.event) - eventStartMin(drag.event);
-    const snapped = Math.max(
-      START_HOUR * 60,
-      Math.min(yToMin(relY), END_HOUR * 60 - dur)
-    );
+    const snapped = Math.max(START_HOUR * 60, Math.min(yToMin(relY), END_HOUR * 60 - dur));
     setDrag(d => ({ ...d, previewDay: hoveredDay, previewMin: snapped }));
   }
 
@@ -125,7 +147,7 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
     if (drag.previewDay !== drag.dayIdx || drag.previewMin !== origStartMin) {
       const dur = eventEndMin(drag.event) - origStartMin;
       const newDay = days[drag.previewDay];
-      const datePrefix = `${newDay.getFullYear()}-${String(newDay.getMonth() + 1).padStart(2, '0')}-${String(newDay.getDate()).padStart(2, '0')}`;
+      const datePrefix = isoDate(newDay);
       const startISO = `${datePrefix}T${minToTimeStr(drag.previewMin)}:00`;
       const endISO = `${datePrefix}T${minToTimeStr(drag.previewMin + dur)}:00`;
       onEventMove(drag.event, startISO, endISO);
@@ -146,6 +168,92 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
 
   const timeLabels = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
 
+  // Shared sticky header
+  const header = (
+    <div className="week-header">
+      <div style={{ width: GUTTER_W, flexShrink: 0 }} />
+      {days.map((d, i) => {
+        const isToday = dateStr(d) === todayStr;
+        return (
+          <div key={i} className={`week-day-header${isToday ? ' today' : ''}`}>
+            <span className="week-dow">{DAY_NAMES[d.getDay()]}</span>
+            <span className={`week-date-badge${isToday ? ' active' : ''}`}>{d.getDate()}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // All-day events row (for multi-day events)
+  const allDayRow = allDayEvents.length > 0 && (
+    <div className="week-allday-row">
+      <div className="week-allday-gutter" style={{ width: GUTTER_W }}>終日</div>
+      <div
+        className="week-allday-cols"
+        style={{ gridTemplateRows: `repeat(${allDayEvents.length}, 22px)` }}
+      >
+        {allDayEvents.map((ev, idx) => (
+          <div
+            key={ev.eventId || idx}
+            className="week-allday-event"
+            style={{
+              gridRow: idx + 1,
+              gridColumn: `${ev.colStart + 1} / ${ev.colEnd + 2}`,
+              ...(ev.isPublic === false ? { background: '#94a3b8' } : {}),
+            }}
+            onClick={() => onEventClick(ev)}
+            title={`${ev.title} (${ev.startDatetime.slice(0, 10)}〜${ev.endDatetime.slice(0, 10)})`}
+          >
+            {ev.title}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ── Compact mode ──
+  if (compact) {
+    return (
+      <div className="week-view">
+        {header}
+        {allDayRow}
+        <div className="week-compact-body">
+          {days.map((d, dayIdx) => {
+            const isToday = dateStr(d) === todayStr;
+            const dayEvents = [...(timedEventsByDay[dayIdx] || [])].sort(
+              (a, b) => eventStartMin(a) - eventStartMin(b)
+            );
+            return (
+              <div
+                key={dayIdx}
+                className={`week-compact-day${isToday ? ' today-col' : ''}`}
+                onClick={() => onSlotClick(dateStr(d), '09:00')}
+              >
+                {dayEvents.length === 0 ? (
+                  <div className="week-compact-empty">—</div>
+                ) : (
+                  dayEvents.map((ev, ei) => (
+                    <div
+                      key={ev.eventId || ei}
+                      className="week-compact-event"
+                      style={ev.isPublic === false ? { background: '#f1f5f9', color: '#475569' } : undefined}
+                      onClick={e => { e.stopPropagation(); onEventClick(ev); }}
+                      title={`${ev.title}\n${minToTimeStr(eventStartMin(ev))}–${minToTimeStr(eventEndMin(ev))}`}
+                    >
+                      <span className="week-compact-time">{minToTimeStr(eventStartMin(ev))}</span>
+                      <span className="week-compact-title">{ev.title}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal timeline mode ──
   return (
     <div
       className="week-view"
@@ -154,21 +262,8 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
       onMouseLeave={handleMouseUp}
       style={{ userSelect: drag ? 'none' : undefined, cursor: drag ? 'grabbing' : undefined }}
     >
-      {/* Sticky header */}
-      <div className="week-header">
-        <div style={{ width: GUTTER_W, flexShrink: 0 }} />
-        {days.map((d, i) => {
-          const isToday = dateStr(d) === today;
-          return (
-            <div key={i} className={`week-day-header${isToday ? ' today' : ''}`}>
-              <span className="week-dow">{DAY_NAMES[d.getDay()]}</span>
-              <span className={`week-date-badge${isToday ? ' active' : ''}`}>{d.getDate()}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Scrollable body */}
+      {header}
+      {allDayRow}
       <div className="week-body" ref={bodyRef}>
         {/* Time gutter */}
         <div className="week-time-gutter" style={{ width: GUTTER_W, height: GRID_HEIGHT }}>
@@ -186,8 +281,8 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
         {/* Day columns */}
         <div className="week-cols" style={{ height: GRID_HEIGHT }}>
           {days.map((d, dayIdx) => {
-            const isToday = dateStr(d) === today;
-            const colEventsRaw = eventsByDay[dayIdx] || [];
+            const isToday = dateStr(d) === todayStr;
+            const colEventsRaw = timedEventsByDay[dayIdx] || [];
             const colEvents = drag
               ? colEventsRaw.filter(ev => ev.eventId !== drag.event.eventId)
               : colEventsRaw;
@@ -203,7 +298,7 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
                 {timeLabels.map(h => (
                   <div
                     key={h}
-                    className={`week-hour-line${h % 1 === 0 ? '' : ' half'}`}
+                    className="week-hour-line"
                     style={{ top: (h - START_HOUR) * HOUR_HEIGHT }}
                   />
                 ))}

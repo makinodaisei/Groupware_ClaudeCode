@@ -369,7 +369,7 @@ export default function Admin() {
 
   return (
     <div>
-      <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1.25rem' }}>管理設定</h2>
+      <div className="page-header"><h2>管理設定</h2></div>
       <div style={{ display: 'flex', gap: '0', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
         {TABS.map(tab => (
           <button

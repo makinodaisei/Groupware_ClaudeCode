@@ -7,12 +7,12 @@ import DatePicker from '../components/DatePicker';
 import TimeSelect from '../components/TimeSelect';
 import WeekView from '../components/WeekView';
 
+const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 
-function getMonday(date) {
+function getWeekStart(date, startDay = 1) {
   const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day; // Monday = 1
-  d.setDate(d.getDate() + diff);
+  const diff = (d.getDay() - startDay + 7) % 7;
+  d.setDate(d.getDate() - diff);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -29,7 +29,8 @@ function weekLabel(weekStart) {
 
 export default function Schedule() {
   const showToast = useToast();
-  const [view, setView] = useState('month'); // 'month' | 'week'
+  const [view, setView] = useState('week'); // 'month' | 'week' | 'compact'
+  const [weekStartDay, setWeekStartDay] = useState(1); // 0=Sun … 6=Sat
 
   // Month view state
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -37,7 +38,7 @@ export default function Schedule() {
   });
 
   // Week view state
-  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date(), 1));
 
   const [events, setEvents] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -50,24 +51,27 @@ export default function Schedule() {
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const today = new Date();
 
+  // Re-anchor week when start day setting changes
+  useEffect(() => {
+    setWeekStart(prev => getWeekStart(prev, weekStartDay));
+  }, [weekStartDay]);
+
   // Fetch events for current view range
   const loadEvents = useCallback(async () => {
     try {
       if (view === 'month') {
-        const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
+        const monthStr = `${y}-${String(m + 1).padStart(2, '0')}`;
         const data = await getSchedules({ month: monthStr });
         setEvents(data.events || []);
       } else {
-        // Fetch week: query by month(s) that overlap the week
         const months = new Set();
         for (let i = 0; i < 7; i++) {
           const d = new Date(weekStart);
           d.setDate(d.getDate() + i);
-          months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+          months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
         }
         const results = await Promise.all([...months].map(mo => getSchedules({ month: mo })));
         const all = results.flatMap(r => r.events || []);
-        // Deduplicate by eventId
         const seen = new Set();
         setEvents(all.filter(e => seen.has(e.eventId) ? false : (seen.add(e.eventId), true)));
       }
@@ -80,7 +84,7 @@ export default function Schedule() {
 
   function openAddDrawer(dateStr, timeStr = '09:00') {
     const endH = parseInt(timeStr.split(':')[0]) + 1;
-    const endTime = `${String(endH > 23 ? 23 : endH).padStart(2,'0')}:${timeStr.split(':')[1]}`;
+    const endTime = `${String(endH > 23 ? 23 : endH).padStart(2, '0')}:${timeStr.split(':')[1]}`;
     setEditEvent(null);
     setForm({ title: '', location: '', startDate: dateStr, startTime: timeStr, endDate: dateStr, endTime, isPublic: true });
     setDrawerOpen(true);
@@ -133,54 +137,95 @@ export default function Schedule() {
     if (!isNaN(day)) (eventsByDay[day] = eventsByDay[day] || []).push(e);
   });
 
+  function jumpToToday() {
+    const n = new Date();
+    setCurrentMonth(new Date(n.getFullYear(), n.getMonth(), 1));
+    setWeekStart(getWeekStart(n, weekStartDay));
+  }
+
+  function shiftWeek(days) {
+    setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() + days); return n; });
+  }
+
+  const isWeekLike = view === 'week' || view === 'compact';
+
   return (
     <div>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        {view === 'month' ? (
-          <>
-            <button className="btn btn-secondary" onClick={() => setCurrentMonth(new Date(y, m-1, 1))}>◀</button>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, flex: 1 }}>{y}年 {m+1}月</h2>
-            <button className="btn btn-secondary" onClick={() => setCurrentMonth(new Date(y, m+1, 1))}>▶</button>
-          </>
-        ) : (
-          <>
-            <button className="btn btn-secondary" onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate()-7); return n; })}>◀</button>
-            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, flex: 1 }}>{weekLabel(weekStart)}</h2>
-            <button className="btn btn-secondary" onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate()+7); return n; })}>▶</button>
-          </>
-        )}
-
-        {/* View toggle */}
-        <div className="view-toggle">
-          <button
-            className={`view-toggle-btn${view === 'month' ? ' active' : ''}`}
-            onClick={() => setView('month')}
-          >月</button>
-          <button
-            className={`view-toggle-btn${view === 'week' ? ' active' : ''}`}
-            onClick={() => setView('week')}
-          >週</button>
+      {/* Page header */}
+      <div className="page-header">
+        <h2>スケジュール</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {/* Navigation */}
+          {isWeekLike ? (
+            <>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.55rem', fontSize: '0.78rem' }}
+                onClick={() => shiftWeek(-7)} title="前の週">◀◀</button>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem' }}
+                onClick={() => shiftWeek(-1)} title="前の日">◀</button>
+              <span style={{ fontSize: '0.95rem', fontWeight: 700, minWidth: 140, textAlign: 'center' }}>
+                {weekLabel(weekStart)}
+              </span>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem' }}
+                onClick={() => shiftWeek(1)} title="次の日">▶</button>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.55rem', fontSize: '0.78rem' }}
+                onClick={() => shiftWeek(7)} title="次の週">▶▶</button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem' }}
+                onClick={() => setCurrentMonth(new Date(y, m - 1, 1))}>◀</button>
+              <span style={{ fontSize: '0.95rem', fontWeight: 700, minWidth: 140, textAlign: 'center' }}>
+                {`${y}年 ${m + 1}月`}
+              </span>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem' }}
+                onClick={() => setCurrentMonth(new Date(y, m + 1, 1))}>▶</button>
+            </>
+          )}
+          {/* Today */}
+          <button className="btn btn-secondary" style={{ fontSize: '0.82rem' }} onClick={jumpToToday}>今日</button>
+          {/* Week start day selector */}
+          {isWeekLike && (
+            <select
+              className="week-startday-select"
+              value={weekStartDay}
+              onChange={e => setWeekStartDay(Number(e.target.value))}
+              title="週の起点曜日"
+            >
+              {DAY_NAMES.map((name, i) => (
+                <option key={i} value={i}>{name}曜始</option>
+              ))}
+            </select>
+          )}
+          {/* View toggle */}
+          <div className="view-toggle">
+            <button className={`view-toggle-btn${view === 'month' ? ' active' : ''}`} onClick={() => setView('month')}>月</button>
+            <button className={`view-toggle-btn${view === 'week' ? ' active' : ''}`} onClick={() => setView('week')}>週</button>
+            <button className={`view-toggle-btn${view === 'compact' ? ' active' : ''}`} onClick={() => setView('compact')}>圧縮</button>
+          </div>
+          <button className="btn btn-primary" onClick={() => openAddDrawer(todayLocalStr())}>＋ 追加</button>
         </div>
-
-        <button className="btn btn-primary" onClick={() => openAddDrawer(todayLocalStr())}>＋ 追加</button>
       </div>
 
       {/* Month view */}
       {view === 'month' && (
         <div className="cal-grid">
-          {['日','月','火','水','木','金','土'].map(d => <div key={d} className="cal-head">{d}</div>)}
+          {['日', '月', '火', '水', '木', '金', '土'].map(d => <div key={d} className="cal-head">{d}</div>)}
           {Array.from({ length: firstDay }, (_, i) => <div key={`b${i}`} className="cal-cell blank" />)}
           {Array.from({ length: daysInMonth }, (_, i) => {
             const day = i + 1;
             const isToday = y === today.getFullYear() && m === today.getMonth() && day === today.getDate();
-            const dateStr = `${y}/${String(m+1).padStart(2,'0')}/${String(day).padStart(2,'0')}`;
+            const dateStr = `${y}/${String(m + 1).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
             return (
               <div key={day} className={`cal-cell${isToday ? ' today' : ''}`} onClick={() => openAddDrawer(dateStr)}>
                 <div className="cal-day-num">{day}</div>
                 {(eventsByDay[day] || []).map((e, ei) => (
-                  <div key={e.eventId || ei} className="cal-event-chip" title={e.title}
-                    onClick={ev => { ev.stopPropagation(); openEditDrawer(e); }}>
+                  <div
+                    key={e.eventId || ei}
+                    className="cal-event-chip"
+                    style={e.isPublic === false ? { background: '#f1f5f9', color: '#475569' } : undefined}
+                    title={`${e.title}${e.isPublic === false ? ' (非公開)' : ''}`}
+                    onClick={ev => { ev.stopPropagation(); openEditDrawer(e); }}
+                  >
                     {e.title}
                   </div>
                 ))}
@@ -190,11 +235,12 @@ export default function Schedule() {
         </div>
       )}
 
-      {/* Week view */}
-      {view === 'week' && (
+      {/* Week / Compact view */}
+      {isWeekLike && (
         <WeekView
           events={events}
           weekStart={weekStart}
+          compact={view === 'compact'}
           onSlotClick={(dateStr, timeStr) => openAddDrawer(dateStr, timeStr)}
           onEventClick={openEditDrawer}
           onEventMove={handleEventMove}
