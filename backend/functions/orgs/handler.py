@@ -5,6 +5,7 @@ import uuid
 
 import auth
 import response
+from boto3.dynamodb.conditions import Key
 from db_client import get_table
 from router import Router
 from utils import get_method_and_path, now_iso
@@ -37,8 +38,7 @@ def list_orgs(event: dict) -> dict:
     table = get_table()
     resp = table.query(
         IndexName="DateRangeIndex",
-        KeyConditionExpression="gsi1pk = :pk",
-        ExpressionAttributeValues={":pk": "ORG"},
+        KeyConditionExpression=Key("gsi1pk").eq("ORG"),
     )
     orgs = [_item_to_org(i) for i in resp.get("Items", [])]
     return response.ok({"orgs": orgs})

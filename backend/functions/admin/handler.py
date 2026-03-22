@@ -18,58 +18,66 @@ logger.setLevel(logging.INFO)
 RELATION_RULES = [
     {
         "id": "reservation_facility",
-        "child": "RESERVATION", "field": "facilityId",
-        "parent": "FACILITY",   "parentPrefix": "FACILITY",
+        "child": "RESERVATION", "childSkPrefix": "RESERVATION#",
+        "field": "facilityId",
+        "parent": "FACILITY",   "parentPrefix": "FACILITY", "parentSk": "#METADATA",
         "onDelete": "CASCADE",  "required": True, "backfillable": False,
         "desc": "予約は施設に紐づく。施設削除時に予約も削除。",
     },
     {
         "id": "reservation_user",
-        "child": "RESERVATION", "field": "reservedBy",
-        "parent": "USER",       "parentPrefix": None,
+        "child": "RESERVATION", "childSkPrefix": "RESERVATION#",
+        "field": "reservedBy",
+        "parent": "USER",       "parentPrefix": None, "parentSk": None,
         "onDelete": "SET_NULL", "required": False, "backfillable": False,
         "desc": "予約の予約者。ユーザー削除時はNULLに。",
     },
     {
         "id": "schedule_user",
-        "child": "SCHEDULE",    "field": "createdBy",
-        "parent": "USER",       "parentPrefix": None,
+        "child": "SCHEDULE",    "childSkPrefix": "SCHEDULE#",
+        "field": "createdBy",
+        "parent": "USER",       "parentPrefix": None, "parentSk": None,
         "onDelete": "SET_NULL", "required": False, "backfillable": False,
         "desc": "スケジュールの作成者。ユーザー削除時はNULLに。",
     },
     {
         "id": "document_user",
-        "child": "DOCUMENT",    "field": "uploadedBy",
-        "parent": "USER",       "parentPrefix": None,
+        "child": "DOCUMENT",    "childSkPrefix": "DOCUMENT#",
+        "field": "uploadedBy",
+        "parent": "USER",       "parentPrefix": None, "parentSk": None,
         "onDelete": "SET_NULL", "required": False, "backfillable": False,
         "desc": "ドキュメントのアップロード者。ユーザー削除時はNULLに。",
     },
     {
         "id": "facility_parent",
-        "child": "FACILITY",    "field": "parentId",
-        "parent": "FACILITY",   "parentPrefix": "FACILITY",
+        "child": "FACILITY",    "childSkPrefix": None, "childSk": "#METADATA",
+        "field": "parentId",
+        "parent": "FACILITY",   "parentPrefix": "FACILITY", "parentSk": "#METADATA",
         "onDelete": "RESTRICT", "required": False, "backfillable": False,
         "desc": "施設の親施設。子施設が存在する間は親削除不可。",
     },
     {
         "id": "facility_type",
-        "child": "FACILITY",    "field": "facilityTypeId",
-        "parent": "FACILITYTYPE", "parentPrefix": "FACILITYTYPE",
+        "child": "FACILITY",    "childSkPrefix": None, "childSk": "#METADATA",
+        "field": "facilityTypeId",
+        "parent": "FACILITYTYPE", "parentPrefix": "FACILITYTYPE", "parentSk": "FACILITYTYPE",
         "onDelete": "RESTRICT", "required": True,  "backfillable": True,
         "desc": "施設の種別。種別削除前に施設の再割当が必要。",
     },
     {
         "id": "facility_org",
-        "child": "FACILITY",    "field": "orgId",
-        "parent": "ORG",        "parentPrefix": "ORG",
+        "child": "FACILITY",    "childSkPrefix": None, "childSk": "#METADATA",
+        "field": "orgId",
+        "parent": "ORG",        "parentPrefix": "ORG", "parentSk": "ORG",
         "onDelete": "SET_NULL", "required": False, "backfillable": True,
         "desc": "施設の所属組織。組織削除時はNULLに。",
     },
     {
         "id": "user_org",
-        "child": "USER",        "field": "orgId",
-        "parent": "ORG",        "parentPrefix": "ORG",
-        "onDelete": "SET_NULL", "required": False, "backfillable": True,
+        "child": "USER",        "childSkPrefix": None, "childSk": "USER",
+        "field": "orgId",
+        "parent": "ORG",        "parentPrefix": "ORG", "parentSk": "ORG",
+        "onDelete": "SET_NULL", "required": False, "backfillable": False,
         "desc": "ユーザーの所属組織。組織削除時はNULLに。",
     },
 ]
@@ -92,35 +100,45 @@ def _scan_all(table, **kwargs) -> list:
     return items
 
 
-def _get_existing_pks(table, prefix: str) -> set:
+def _child_filter(rule: dict):
+    """Build Attr filter for child entity scan based on rule's SK info."""
+    if rule.get("childSk"):
+        return Attr("SK").eq(rule["childSk"])
+    elif rule.get("childSkPrefix"):
+        return Attr("SK").begins_with(rule["childSkPrefix"])
+    return None
+
+
+def _get_existing_pks(table, prefix: str, sk: str) -> set:
     """Return set of all IDs (without prefix) for a given entity type."""
     items = _scan_all(
         table,
-        FilterExpression=Attr("SK").eq(prefix),
+        FilterExpression=Attr("SK").eq(sk),
     )
     return {i["PK"].replace(f"{prefix}#", "") for i in items}
 
 
 def _find_orphans(table, rule: dict) -> list:
     """Return list of child items where the referenced parent does not exist."""
-    child_sk = rule["child"]
     field = rule["field"]
     parent_prefix = rule["parentPrefix"]
+    parent_sk = rule["parentSk"]
+
+    sk_filter = _child_filter(rule)
+    if sk_filter is None:
+        return []
 
     children = _scan_all(
         table,
-        FilterExpression=Attr("SK").eq(child_sk) & Attr(field).exists(),
+        FilterExpression=sk_filter & Attr(field).exists(),
     )
 
-    parent_ids = _get_existing_pks(table, parent_prefix)
-    # Special case: facilityId / parentId in FACILITY uses raw ID not prefixed
-    # The field stores just the ID, parent PK is PREFIX#ID
+    parent_ids = _get_existing_pks(table, parent_prefix, parent_sk)
     orphans = []
     for item in children:
         val = item.get(field, "")
         if not val:
             continue
-        # Strip prefix if present (e.g. "ORG#xxx" -> "xxx")
         raw_id = val.replace(f"{parent_prefix}#", "") if val.startswith(f"{parent_prefix}#") else val
         if raw_id not in parent_ids and val not in parent_ids:
             orphans.append(item)
@@ -195,12 +213,15 @@ def run_backfill(event: dict) -> dict:
 
     table = get_table()
     field = rule["field"]
-    child_sk = rule["child"]
+
+    sk_filter = _child_filter(rule)
+    if sk_filter is None:
+        return response.bad_request(f"SK filter not defined for rule: {rule_id}")
 
     # Find items where field is missing or empty
     items = _scan_all(
         table,
-        FilterExpression=Attr("SK").eq(child_sk) & (
+        FilterExpression=sk_filter & (
             Attr(field).not_exists() | Attr(field).eq("")
         ),
     )
