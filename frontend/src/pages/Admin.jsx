@@ -170,10 +170,9 @@ function UsersTab() {
 // ② 施設マスタタブ
 // ─────────────────────────────────────────────
 
-function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleCollapsed, facilityTypes, orgs }) {
+function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleCollapsed, facilityTypes }) {
   const isGroup = f.facilityType === 'group';
   const typeName = facilityTypes.find(t => t.typeId === f.facilityTypeId)?.name || (isGroup ? 'グループ' : '施設');
-  const orgName = orgs.find(o => o.orgId === f.orgId)?.name || '—';
   return (
     <tr>
       <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
@@ -187,7 +186,6 @@ function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleColla
       <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.location || '—'}</td>
       <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.capacity}名</td>
       <td style={{ fontSize: '0.82rem' }}>{typeName}</td>
-      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{orgName}</td>
       <td style={{ display: 'flex', gap: '0.4rem' }}>
         <button type="button" className="btn btn-sm" onClick={() => openEdit(f)}>編集</button>
         <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(f)}>削除</button>
@@ -200,17 +198,15 @@ function FacilitiesTab() {
   const showToast = useToast();
   const [facilities, setFacilities] = useState(null);
   const [facilityTypes, setFacilityTypes] = useState([]);
-  const [orgs, setOrgs] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [collapsed, setCollapsed] = useState({});
 
   const load = useCallback(async () => {
     try {
-      const [fData, tData, oData] = await Promise.all([getFacilities(), getFacilityTypes(), getOrgs()]);
+      const [fData, tData] = await Promise.all([getFacilities(), getFacilityTypes()]);
       setFacilities(fData.facilities || []);
       setFacilityTypes(tData.facilityTypes || []);
-      setOrgs(oData.orgs || []);
     } catch {
       setFacilities([]);
       showToast('施設情報の取得に失敗しました', 'error');
@@ -230,7 +226,6 @@ function FacilitiesTab() {
         capacity: fd.capacity ? parseInt(fd.capacity) : 1,
         location: fd.location || '',
         facilityTypeId: fd.facilityTypeId || '',
-        orgId: fd.orgId || '',
       });
       showToast('施設を更新しました', 'success');
     } else {
@@ -242,7 +237,6 @@ function FacilitiesTab() {
         location: fd.location || '',
         facilityType: selectedType?.isBookable === false ? 'group' : 'facility',
         facilityTypeId: fd.facilityTypeId || '',
-        orgId: fd.orgId || '',
         parentId: fd.parentId || 'ROOT',
       });
       showToast('施設を作成しました', 'success');
@@ -274,25 +268,25 @@ function FacilitiesTab() {
       <div className="card">
         <table>
           <thead>
-            <tr><th scope="col">名前</th><th scope="col">場所</th><th scope="col">収容</th><th scope="col">種別</th><th scope="col">組織</th><th scope="col">操作</th></tr>
+            <tr><th scope="col">名前</th><th scope="col">場所</th><th scope="col">収容</th><th scope="col">種別</th><th scope="col">操作</th></tr>
           </thead>
           <tbody>
             {facilities === null ? (
-              <tr><td colSpan={6}><div className="skeleton skeleton-row" /></td></tr>
+              <tr><td colSpan={5}><div className="skeleton skeleton-row" /></td></tr>
             ) : facilities.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>施設なし</td></tr>
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>施設なし</td></tr>
             ) : (
               <>
                 {groups.map(g => (
                   <Fragment key={g.facilityId}>
-                    <FacilityRow f={g} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} orgs={orgs} />
+                    <FacilityRow f={g} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} />
                     {!collapsed[g.facilityId] && facilities.filter(f => f.parentId === g.facilityId).map(child => (
-                      <FacilityRow key={child.facilityId} f={child} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} orgs={orgs} />
+                      <FacilityRow key={child.facilityId} f={child} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} />
                     ))}
                   </Fragment>
                 ))}
                 {topLevel.map(f => (
-                  <FacilityRow key={f.facilityId} f={f} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} orgs={orgs} />
+                  <FacilityRow key={f.facilityId} f={f} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} />
                 ))}
               </>
             )}
@@ -321,13 +315,6 @@ function FacilitiesTab() {
             </select>
           </div>
         )}
-        <div className="field">
-          <label>所属組織</label>
-          <select name="orgId" defaultValue={editTarget?.orgId || ''}>
-            <option value="">なし</option>
-            {orgs.map(o => <option key={o.orgId} value={o.orgId}>{o.name}</option>)}
-          </select>
-        </div>
         <div className="field">
           <label>収容人数</label>
           <input type="number" name="capacity" min="1" defaultValue={editTarget?.capacity || 1} />
