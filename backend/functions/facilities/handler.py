@@ -3,7 +3,6 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone, timedelta
 
 import auth
 import response
@@ -18,7 +17,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 RESERVATION_BY_DATE_INDEX = "ReservationByDateIndex"
-LOCK_TTL_SECONDS = 300  # 5 minutes lock expiry for cleanup
 
 
 # ---------- Helpers ----------
@@ -35,10 +33,6 @@ def _extract_ids(path: str) -> tuple[str | None, str | None]:
     if match:
         return match.group(1), None
     return None, None
-
-
-def _unix_timestamp(dt: datetime) -> int:
-    return int(dt.timestamp())
 
 
 def _item_to_facility(item: dict) -> dict:
@@ -66,6 +60,38 @@ def _item_to_reservation(item: dict) -> dict:
         "notes": item.get("notes", ""),
         "createdAt": item.get("createdAt"),
     }
+
+
+def _query_all(table, **kwargs) -> list:
+    """Query DynamoDB with automatic pagination."""
+    items = []
+    while True:
+        resp = table.query(**kwargs)
+        items.extend(resp.get("Items", []))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        kwargs["ExclusiveStartKey"] = last_key
+    return items
+
+
+def _has_time_overlap(table, facility_id: str, date_key: str, start: str, end: str) -> bool:
+    """Return True if any existing reservation on date_key overlaps the interval [start, end).
+
+    Overlap condition: existing.start < new.end AND existing.end > new.start
+    Note: compares ISO-8601 strings lexicographically — callers must use a consistent
+    timezone offset (e.g. always +09:00 or always Z) for correct results.
+    """
+    items = _query_all(
+        table,
+        KeyConditionExpression=Key("PK").eq(f"FACILITY#{facility_id}") & Key("SK").begins_with(f"RESERVATION#{date_key}"),
+    )
+    for item in items:
+        ex_start = item.get("startDatetime", "")
+        ex_end = item.get("endDatetime", "")
+        if ex_start < end and ex_end > start:
+            return True
+    return False
 
 
 # ---------- Facility CRUD ----------
@@ -213,18 +239,20 @@ def list_reservations(event: dict) -> dict:
     table = get_table()
 
     if date:
-        # Query by date across all facilities
-        resp = table.query(
+        # Query by date across all facilities (paginated)
+        items = _query_all(
+            table,
             IndexName=RESERVATION_BY_DATE_INDEX,
             KeyConditionExpression=Key("gsi2pk").eq(f"RESERVATION#{date}"),
         )
-        reservations = [_item_to_reservation(item) for item in resp.get("Items", [])]
+        reservations = [_item_to_reservation(item) for item in items]
     elif facility_id:
-        # Query by facility
-        resp = table.query(
+        # Query by facility (paginated)
+        items = _query_all(
+            table,
             KeyConditionExpression=Key("PK").eq(f"FACILITY#{facility_id}") & Key("SK").begins_with("RESERVATION#"),
         )
-        reservations = [_item_to_reservation(item) for item in resp.get("Items", [])]
+        reservations = [_item_to_reservation(item) for item in items]
     else:
         return response.bad_request("Provide facilityId in path or 'date' query parameter")
 
@@ -232,7 +260,20 @@ def list_reservations(event: dict) -> dict:
 
 
 def create_reservation(event: dict) -> dict:
-    """Create a reservation with exclusive control via TransactWriteItems."""
+    """Create a reservation with exclusive control via TransactWriteItems.
+
+    Two-layer protection:
+      1. Pre-check: _has_time_overlap queries existing reservations and rejects
+         overlapping time ranges before writing (catches 10:00-12:00 vs 11:00-13:00).
+      2. Atomic LOCK: TransactWriteItems with attribute_not_exists(PK) on the LOCK item
+         prevents exact same-start-time races between concurrent requests.
+
+    The LOCK item has no TTL — it is deleted only when the reservation is deleted,
+    so the timeslot remains protected for the lifetime of the reservation.
+
+    Note: the pre-check has a small TOCTOU window for non-identical start times.
+    For an internal groupware this is an acceptable MVP tradeoff.
+    """
     user_id = auth.get_user_id(event)
     _, path = get_method_and_path(event)
     facility_id, _ = _extract_ids(path)
@@ -255,12 +296,18 @@ def create_reservation(event: dict) -> dict:
     if not facility_resp.get("Item"):
         return response.not_found("Facility")
 
-    reservation_id = str(uuid.uuid4())
     date_key = start[:10]  # YYYY-MM-DD
     start_time = start[11:16]  # HH:MM
-    lock_expiry = _unix_timestamp(datetime.now(timezone.utc) + timedelta(seconds=LOCK_TTL_SECONDS))
 
-    # Lock SK encodes date+time to enable range-based overlap detection
+    # ① Time-range overlap check (pre-write guard)
+    if _has_time_overlap(table, facility_id, date_key, start, end):
+        return response.conflict(
+            f"The facility is already reserved during the requested time on {date_key}"
+        )
+
+    reservation_id = str(uuid.uuid4())
+
+    # Lock SK encodes date+time; attribute_not_exists guard prevents same-start-time races
     lock_sk = f"LOCK#{date_key}T{start_time}"
     reservation_sk = f"RESERVATION#{date_key}T{start_time}#{reservation_id}"
 
@@ -287,7 +334,7 @@ def create_reservation(event: dict) -> dict:
         "SK": lock_sk,
         "entityType": "LOCK",
         "reservationId": reservation_id,
-        "ttl": lock_expiry,
+        # No TTL: LOCK persists for the lifetime of the reservation
     }
 
     dynamodb = get_dynamodb_client()
@@ -302,7 +349,6 @@ def create_reservation(event: dict) -> dict:
                             "SK": {"S": lock_item["SK"]},
                             "entityType": {"S": "LOCK"},
                             "reservationId": {"S": reservation_id},
-                            "ttl": {"N": str(lock_expiry)},
                         },
                         "ConditionExpression": "attribute_not_exists(PK)",
                     }
@@ -365,13 +411,38 @@ def delete_reservation(event: dict) -> dict:
     if item.get("reservedBy") != user_id and not auth.is_admin(event):
         return response.forbidden()
 
-    # Delete reservation and its lock
     sk = item["SK"]
     date_time = sk.replace("RESERVATION#", "").rsplit("#", 1)[0]
     lock_sk = f"LOCK#{date_time}"
 
-    table.delete_item(Key={"PK": f"FACILITY#{facility_id}", "SK": sk})
-    table.delete_item(Key={"PK": f"FACILITY#{facility_id}", "SK": lock_sk})
+    # ③ Atomically delete reservation and its LOCK together
+    dynamodb = get_dynamodb_client()
+    try:
+        dynamodb.transact_write_items(
+            TransactItems=[
+                {
+                    "Delete": {
+                        "TableName": table.name,
+                        "Key": {
+                            "PK": {"S": f"FACILITY#{facility_id}"},
+                            "SK": {"S": sk},
+                        },
+                    }
+                },
+                {
+                    "Delete": {
+                        "TableName": table.name,
+                        "Key": {
+                            "PK": {"S": f"FACILITY#{facility_id}"},
+                            "SK": {"S": lock_sk},
+                        },
+                    }
+                },
+            ]
+        )
+    except ClientError:
+        logger.exception("TransactWriteItems failed on delete reservation")
+        return response.server_error("Failed to delete reservation")
 
     return response.no_content()
 

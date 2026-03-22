@@ -99,7 +99,7 @@ jobs:
       - name: Deploy JS (application/javascript)
         working-directory: frontend
         run: |
-          aws s3 sync dist/ s3://groupware-frontend-dev-674594306903/ \
+          aws s3 sync dist/ s3://groupware-frontend-dev-629574119223/ \
             --delete \
             --exclude "*" --include "*.js" \
             --content-type "application/javascript"
@@ -107,14 +107,14 @@ jobs:
       - name: Deploy CSS (text/css)
         working-directory: frontend
         run: |
-          aws s3 sync dist/ s3://groupware-frontend-dev-674594306903/ \
+          aws s3 sync dist/ s3://groupware-frontend-dev-629574119223/ \
             --exclude "*" --include "*.css" \
             --content-type "text/css"
 
       - name: Deploy HTML (text/html)
         working-directory: frontend
         run: |
-          aws s3 cp dist/index.html s3://groupware-frontend-dev-674594306903/index.html \
+          aws s3 cp dist/index.html s3://groupware-frontend-dev-629574119223/index.html \
             --content-type "text/html; charset=utf-8"
 
   generate-docs:

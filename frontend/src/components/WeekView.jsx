@@ -60,6 +60,13 @@ function minToTimeStr(min) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+function shortDate(isoDatetime) {
+  // "2026-03-28T09:00:00+09:00" → "3/28"
+  const m = parseInt(isoDatetime.slice(5, 7));
+  const d = parseInt(isoDatetime.slice(8, 10));
+  return `${m}/${d}`;
+}
+
 export default function WeekView({ events, weekStart, onSlotClick, onEventClick, onEventMove, compact = false }) {
   const [nowMin, setNowMin] = useState(() => {
     const n = new Date();
@@ -190,7 +197,7 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
       <div className="week-allday-gutter" style={{ width: GUTTER_W }}>終日</div>
       <div
         className="week-allday-cols"
-        style={{ gridTemplateRows: `repeat(${allDayEvents.length}, 22px)` }}
+        style={{ gridTemplateRows: `repeat(${allDayEvents.length}, 34px)` }}
       >
         {allDayEvents.map((ev, idx) => (
           <div
@@ -204,7 +211,8 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
             onClick={() => onEventClick(ev)}
             title={`${ev.title} (${ev.startDatetime.slice(0, 10)}〜${ev.endDatetime.slice(0, 10)})`}
           >
-            {ev.title}
+            <span className="week-allday-event-title">{ev.title}</span>
+            <span className="week-allday-event-date">{shortDate(ev.startDatetime)}〜{shortDate(ev.endDatetime)}</span>
           </div>
         ))}
       </div>
@@ -240,7 +248,7 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
                       onClick={e => { e.stopPropagation(); onEventClick(ev); }}
                       title={`${ev.title}\n${minToTimeStr(eventStartMin(ev))}–${minToTimeStr(eventEndMin(ev))}`}
                     >
-                      <span className="week-compact-time">{minToTimeStr(eventStartMin(ev))}</span>
+                      <span className="week-compact-time">{minToTimeStr(eventStartMin(ev))}–{minToTimeStr(eventEndMin(ev))}</span>
                       <span className="week-compact-title">{ev.title}</span>
                     </div>
                   ))
@@ -257,6 +265,7 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
   return (
     <div
       className="week-view"
+      ref={bodyRef}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
@@ -264,7 +273,7 @@ export default function WeekView({ events, weekStart, onSlotClick, onEventClick,
     >
       {header}
       {allDayRow}
-      <div className="week-body" ref={bodyRef}>
+      <div className="week-body">
         {/* Time gutter */}
         <div className="week-time-gutter" style={{ width: GUTTER_W, height: GRID_HEIGHT }}>
           {timeLabels.map(h => (

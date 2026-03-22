@@ -74,6 +74,20 @@ def aws_mock():
         yield
 
 
+def _create(title: str, start: str, end: str, is_public=True, user_id="user-123") -> dict:
+    result = lambda_handler(
+        _make_event("POST", "/schedules", body={
+            "title": title,
+            "startDatetime": start,
+            "endDatetime": end,
+            "isPublic": is_public,
+        }, user_id=user_id),
+        None
+    )
+    assert result["statusCode"] == 201
+    return json.loads(result["body"])
+
+
 def test_create_schedule_success():
     event = _make_event(
         "POST", "/schedules",
@@ -131,6 +145,90 @@ def test_list_schedules_monthly():
     assert result["statusCode"] == 200
     data = json.loads(result["body"])
     assert "events" in data
+
+
+def test_weekly_view_month_boundary():
+    """⑧ Events starting in March must appear when querying a week that spans March/April."""
+    # Event starts March 30, ends April 2
+    _create(
+        "Cross-month event",
+        "2026-03-30T09:00:00+09:00",
+        "2026-04-02T18:00:00+09:00",
+    )
+    # Event starts April 1 (purely April)
+    _create(
+        "April kickoff",
+        "2026-04-01T10:00:00+09:00",
+        "2026-04-01T11:00:00+09:00",
+    )
+
+    # Query the week 2026-03-28 to 2026-04-03
+    result = lambda_handler(
+        _make_event("GET", "/schedules", query_params={
+            "start": "2026-03-28T00:00:00+09:00",
+            "end":   "2026-04-03T23:59:59+09:00",
+        }),
+        None
+    )
+    assert result["statusCode"] == 200
+    data = json.loads(result["body"])
+    titles = {e["title"] for e in data["events"]}
+    assert "Cross-month event" in titles, "March-starting event missing from cross-month week query"
+    assert "April kickoff" in titles, "April event missing from cross-month week query"
+
+
+def test_monthly_view_includes_prev_month_overflow():
+    """⑨ An event starting in March but ending in April must appear in the April month view."""
+    _create(
+        "Long conference",
+        "2026-03-29T09:00:00+09:00",
+        "2026-04-03T18:00:00+09:00",
+    )
+
+    result = lambda_handler(
+        _make_event("GET", "/schedules", query_params={"month": "2026-04"}),
+        None
+    )
+    assert result["statusCode"] == 200
+    data = json.loads(result["body"])
+    titles = {e["title"] for e in data["events"]}
+    assert "Long conference" in titles, "March-started event that extends into April missing from April view"
+
+
+def test_update_is_public_changes_visibility():
+    """⑩ Changing isPublic from True to False must make the event inaccessible to other users."""
+    created = _create(
+        "Team outing",
+        "2026-05-01T10:00:00+09:00",
+        "2026-05-01T18:00:00+09:00",
+        is_public=True,
+        user_id="owner-user",
+    )
+    event_id = created["eventId"]
+
+    # Another user can see it while public
+    get_result = lambda_handler(
+        _make_event("GET", f"/schedules/{event_id}", user_id="other-user"),
+        None
+    )
+    assert get_result["statusCode"] == 200
+
+    # Owner flips isPublic to False
+    update_result = lambda_handler(
+        _make_event("PUT", f"/schedules/{event_id}",
+                    body={"isPublic": False}, user_id="owner-user"),
+        None
+    )
+    assert update_result["statusCode"] == 200
+
+    # Other user must no longer see it
+    get_after = lambda_handler(
+        _make_event("GET", f"/schedules/{event_id}", user_id="other-user"),
+        None
+    )
+    assert get_after["statusCode"] in (403, 404), (
+        f"Expected 403 or 404 after making event private, got {get_after['statusCode']}"
+    )
 
 
 def test_options_returns_200():

@@ -143,6 +143,103 @@ def test_duplicate_reservation_rejected():
     assert data["error"] == "CONFLICT"
 
 
+def test_overlapping_time_range_rejected():
+    """A reservation whose time range overlaps an existing one must return 409,
+    even when the start time is different (e.g. 10:00-12:00 vs 11:00-13:00)."""
+    facility_id = _create_facility()
+
+    # Book 10:00-12:00
+    event1 = _make_event(
+        "POST", f"/facilities/{facility_id}/reservations",
+        body={
+            "title": "Morning Block",
+            "startDatetime": "2026-03-20T10:00:00+09:00",
+            "endDatetime": "2026-03-20T12:00:00+09:00",
+        }
+    )
+    assert lambda_handler(event1, None)["statusCode"] == 201
+
+    # Try to book 11:00-13:00 (overlaps)
+    event2 = _make_event(
+        "POST", f"/facilities/{facility_id}/reservations",
+        body={
+            "title": "Overlapping Meeting",
+            "startDatetime": "2026-03-20T11:00:00+09:00",
+            "endDatetime": "2026-03-20T13:00:00+09:00",
+        }
+    )
+    result2 = lambda_handler(event2, None)
+    assert result2["statusCode"] == 409
+
+    # Try to book 09:00-10:30 (overlaps at end)
+    event3 = _make_event(
+        "POST", f"/facilities/{facility_id}/reservations",
+        body={
+            "title": "Early Overlap",
+            "startDatetime": "2026-03-20T09:00:00+09:00",
+            "endDatetime": "2026-03-20T10:30:00+09:00",
+        }
+    )
+    result3 = lambda_handler(event3, None)
+    assert result3["statusCode"] == 409
+
+
+def test_adjacent_reservations_allowed():
+    """Reservations that touch but do not overlap must both succeed (end == next start)."""
+    facility_id = _create_facility()
+
+    event1 = _make_event(
+        "POST", f"/facilities/{facility_id}/reservations",
+        body={
+            "title": "Morning",
+            "startDatetime": "2026-03-21T09:00:00+09:00",
+            "endDatetime": "2026-03-21T10:00:00+09:00",
+        }
+    )
+    assert lambda_handler(event1, None)["statusCode"] == 201
+
+    event2 = _make_event(
+        "POST", f"/facilities/{facility_id}/reservations",
+        body={
+            "title": "Afternoon",
+            "startDatetime": "2026-03-21T10:00:00+09:00",
+            "endDatetime": "2026-03-21T11:00:00+09:00",
+        }
+    )
+    assert lambda_handler(event2, None)["statusCode"] == 201
+
+
+def test_delete_reservation_removes_lock():
+    """After deleting a reservation, the same timeslot can be booked again."""
+    facility_id = _create_facility()
+    body = {
+        "title": "Temp Meeting",
+        "startDatetime": "2026-03-22T15:00:00+09:00",
+        "endDatetime": "2026-03-22T16:00:00+09:00",
+    }
+
+    create_result = lambda_handler(
+        _make_event("POST", f"/facilities/{facility_id}/reservations", body=body, user_id="user-A"),
+        None
+    )
+    assert create_result["statusCode"] == 201
+    reservation_id = json.loads(create_result["body"])["reservationId"]
+
+    # Delete it
+    delete_result = lambda_handler(
+        _make_event("DELETE", f"/facilities/{facility_id}/reservations/{reservation_id}", user_id="user-A"),
+        None
+    )
+    assert delete_result["statusCode"] == 204
+
+    # Rebook the same slot — must succeed
+    rebook_result = lambda_handler(
+        _make_event("POST", f"/facilities/{facility_id}/reservations", body=body, user_id="user-B"),
+        None
+    )
+    assert rebook_result["statusCode"] == 201
+
+
 def test_reservation_missing_fields():
     facility_id = _create_facility()
     event = _make_event(

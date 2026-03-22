@@ -1,47 +1,32 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { getUsers, createUser, updateUser, deleteUser } from '../lib/api';
 import { getFacilities, createFacility, updateFacility, deleteFacility } from '../lib/api';
+import { getOrgs, createOrg, updateOrg, deleteOrg } from '../lib/api';
+import { getFacilityTypes, createFacilityType, updateFacilityType, deleteFacilityType } from '../lib/api';
+import { runCleanse, runBackfill } from '../lib/api';
 import { useToast } from '../components/Toast';
 import Drawer from '../components/Drawer';
 
-// ---------- 施設行コンポーネント（モジュールレベル） ----------
+// ─────────────────────────────────────────────
+// 共通：ツリー行の折りたたみボタン
+// ─────────────────────────────────────────────
 
-function FacilityRow({ f, indent = false, openEdit, handleDelete, collapsed, toggleCollapsed }) {
-  const isGroup = f.facilityType === 'group';
-  const isCollapsed = collapsed[f.facilityId];
+function CollapseBtn({ collapsed, onToggle }) {
   return (
-    <tr>
-      <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
-        {isGroup ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-            <button
-              type="button"
-              onClick={() => toggleCollapsed(f.facilityId)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1 }}
-              title={isCollapsed ? '展開' : '折りたたむ'}
-            >
-              {isCollapsed ? '▶' : '▼'}
-            </button>
-            <strong>{f.name}</strong>
-          </span>
-        ) : f.name}
-      </td>
-      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.location || '-'}</td>
-      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.capacity}名</td>
-      <td>
-        <span className={`badge ${f.facilityType === 'group' ? 'badge-orange' : 'badge-blue'}`}>
-          {f.facilityType === 'group' ? 'グループ' : '施設'}
-        </span>
-      </td>
-      <td style={{ display: 'flex', gap: '0.4rem' }}>
-        <button type="button" className="btn btn-sm" onClick={() => openEdit(f)}>編集</button>
-        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(f)}>削除</button>
-      </td>
-    </tr>
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1 }}
+      title={collapsed ? '展開' : '折りたたむ'}
+    >
+      {collapsed ? '▶' : '▼'}
+    </button>
   );
 }
 
-// ---------- ユーザーマスタタブ ----------
+// ─────────────────────────────────────────────
+// ① ユーザーマスタタブ
+// ─────────────────────────────────────────────
 
 function UsersTab() {
   const showToast = useToast();
@@ -136,20 +121,10 @@ function UsersTab() {
                   </span>
                 </td>
                 <td style={{ display: 'flex', gap: '0.4rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => handleToggleEnabled(u.userId, u.enabled)}
-                  >
+                  <button type="button" className="btn btn-sm" onClick={() => handleToggleEnabled(u.userId, u.enabled)}>
                     {u.enabled ? '無効化' : '有効化'}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-danger"
-                    onClick={() => handleDelete(u.userId, u.name)}
-                  >
-                    削除
-                  </button>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(u.userId, u.name)}>削除</button>
                 </td>
               </tr>
             ))}
@@ -181,7 +156,36 @@ function UsersTab() {
   );
 }
 
-// ---------- 施設マスタタブ ----------
+// ─────────────────────────────────────────────
+// ② 施設マスタタブ
+// ─────────────────────────────────────────────
+
+function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleCollapsed }) {
+  const isGroup = f.facilityType === 'group';
+  return (
+    <tr>
+      <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
+        {isGroup ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <CollapseBtn collapsed={collapsed[f.facilityId]} onToggle={() => toggleCollapsed(f.facilityId)} />
+            <strong>{f.name}</strong>
+          </span>
+        ) : f.name}
+      </td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.location || '—'}</td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.capacity}名</td>
+      <td>
+        <span className={`badge ${f.facilityType === 'group' ? 'badge-orange' : 'badge-blue'}`}>
+          {f.facilityType === 'group' ? 'グループ' : '施設'}
+        </span>
+      </td>
+      <td style={{ display: 'flex', gap: '0.4rem' }}>
+        <button type="button" className="btn btn-sm" onClick={() => openEdit(f)}>編集</button>
+        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(f)}>削除</button>
+      </td>
+    </tr>
+  );
+}
 
 function FacilitiesTab() {
   const showToast = useToast();
@@ -202,31 +206,27 @@ function FacilitiesTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  function openCreate() { setEditTarget(null); setDrawerOpen(true); }
   function openEdit(f) { setEditTarget(f); setDrawerOpen(true); }
 
   async function handleSubmit(fd) {
     if (!fd.name?.trim()) throw '施設名を入力してください';
     if (editTarget) {
-      // PUT は name/description/capacity/location のみ（facilityType/parentId は変更不可）
-      const payload = {
+      await updateFacility(editTarget.facilityId, {
         name: fd.name.trim(),
         description: fd.description || '',
         capacity: fd.capacity ? parseInt(fd.capacity) : 1,
         location: fd.location || '',
-      };
-      await updateFacility(editTarget.facilityId, payload);
+      });
       showToast('施設を更新しました', 'success');
     } else {
-      const payload = {
+      await createFacility({
         name: fd.name.trim(),
         description: fd.description || '',
         capacity: fd.capacity ? parseInt(fd.capacity) : 1,
         location: fd.location || '',
         facilityType: fd.facilityType || 'facility',
         parentId: fd.parentId || 'ROOT',
-      };
-      await createFacility(payload);
+      });
       showToast('施設を作成しました', 'success');
     }
     setDrawerOpen(false);
@@ -240,29 +240,18 @@ function FacilitiesTab() {
       showToast('施設を削除しました', 'success');
       load();
     } catch (err) {
-      if (err.status === 409) {
-        showToast('子施設または予約が存在するため削除できません', 'error');
-      } else {
-        showToast('削除に失敗しました', 'error');
-      }
+      showToast(err.status === 409 ? '子施設または予約が存在するため削除できません' : '削除に失敗しました', 'error');
     }
   }
 
   const groups = facilities ? facilities.filter(f => f.facilityType === 'group') : [];
   const topLevel = facilities ? facilities.filter(f => f.facilityType !== 'group' && f.parentId === 'ROOT') : [];
-
-  function getChildren(groupId) {
-    return facilities ? facilities.filter(f => f.parentId === groupId) : [];
-  }
-
-  function toggleCollapsed(groupId) {
-    setCollapsed(prev => ({ ...prev, [groupId]: !prev[groupId] }));
-  }
+  const toggleCollapsed = id => setCollapsed(p => ({ ...p, [id]: !p[id] }));
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-        <button className="btn btn-primary" onClick={openCreate}>+ 施設追加</button>
+        <button className="btn btn-primary" onClick={() => { setEditTarget(null); setDrawerOpen(true); }}>+ 施設追加</button>
       </div>
       <div className="card">
         <table>
@@ -278,35 +267,14 @@ function FacilitiesTab() {
               <>
                 {groups.map(g => (
                   <Fragment key={g.facilityId}>
-                    <FacilityRow
-                      f={g}
-                      openEdit={openEdit}
-                      handleDelete={handleDelete}
-                      collapsed={collapsed}
-                      toggleCollapsed={toggleCollapsed}
-                    />
-                    {!collapsed[g.facilityId] && getChildren(g.facilityId).map(child => (
-                      <FacilityRow
-                        key={child.facilityId}
-                        f={child}
-                        indent
-                        openEdit={openEdit}
-                        handleDelete={handleDelete}
-                        collapsed={collapsed}
-                        toggleCollapsed={toggleCollapsed}
-                      />
+                    <FacilityRow f={g} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} />
+                    {!collapsed[g.facilityId] && facilities.filter(f => f.parentId === g.facilityId).map(child => (
+                      <FacilityRow key={child.facilityId} f={child} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} />
                     ))}
                   </Fragment>
                 ))}
                 {topLevel.map(f => (
-                  <FacilityRow
-                    key={f.facilityId}
-                    f={f}
-                    openEdit={openEdit}
-                    handleDelete={handleDelete}
-                    collapsed={collapsed}
-                    toggleCollapsed={toggleCollapsed}
-                  />
+                  <FacilityRow key={f.facilityId} f={f} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} />
                 ))}
               </>
             )}
@@ -314,12 +282,7 @@ function FacilitiesTab() {
         </table>
       </div>
 
-      <Drawer
-        isOpen={drawerOpen}
-        title={editTarget ? '施設を編集' : '施設を追加'}
-        onClose={() => setDrawerOpen(false)}
-        onSubmit={handleSubmit}
-      >
+      <Drawer isOpen={drawerOpen} title={editTarget ? '施設を編集' : '施設を追加'} onClose={() => setDrawerOpen(false)} onSubmit={handleSubmit}>
         <div className="field">
           <label>施設名 <span style={{ color: 'var(--color-danger)' }}>*</span></label>
           <input type="text" name="name" defaultValue={editTarget?.name || ''} placeholder="例：第1会議室" />
@@ -335,9 +298,7 @@ function FacilitiesTab() {
           <label>親グループ</label>
           <select name="parentId" defaultValue={editTarget?.parentId || 'ROOT'} disabled={!!editTarget}>
             <option value="ROOT">なし（トップレベル）</option>
-            {groups.map(g => (
-              <option key={g.facilityId} value={g.facilityId}>{g.name}</option>
-            ))}
+            {groups.map(g => <option key={g.facilityId} value={g.facilityId}>{g.name}</option>)}
           </select>
         </div>
         <div className="field">
@@ -357,11 +318,510 @@ function FacilitiesTab() {
   );
 }
 
-// ---------- 管理設定ページ本体 ----------
+// ─────────────────────────────────────────────
+// ③ 組織マスタタブ
+// ─────────────────────────────────────────────
+
+function OrgRow({ org, indent, openEdit, handleDelete, collapsed, toggleCollapsed, hasChildren }) {
+  return (
+    <tr>
+      <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
+        {hasChildren ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <CollapseBtn collapsed={collapsed[org.orgId]} onToggle={() => toggleCollapsed(org.orgId)} />
+            <strong>{org.name}</strong>
+          </span>
+        ) : org.name}
+      </td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{org.description || '—'}</td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{org.parentOrgId === 'ROOT' ? '—' : org.parentOrgId}</td>
+      <td style={{ display: 'flex', gap: '0.4rem' }}>
+        <button type="button" className="btn btn-sm" onClick={() => openEdit(org)}>編集</button>
+        <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(org)}>削除</button>
+      </td>
+    </tr>
+  );
+}
+
+function OrgsTab() {
+  const showToast = useToast();
+  const [orgs, setOrgs] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [collapsed, setCollapsed] = useState({});
+
+  const load = useCallback(async () => {
+    try {
+      const data = await getOrgs();
+      setOrgs(data.orgs || []);
+    } catch {
+      setOrgs([]);
+      showToast('組織情報の取得に失敗しました', 'error');
+    }
+  }, [showToast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function openEdit(org) { setEditTarget(org); setDrawerOpen(true); }
+
+  async function handleSubmit(fd) {
+    if (!fd.name?.trim()) throw '組織名を入力してください';
+    if (editTarget) {
+      await updateOrg(editTarget.orgId, { name: fd.name.trim(), description: fd.description || '' });
+      showToast('組織を更新しました', 'success');
+    } else {
+      await createOrg({ name: fd.name.trim(), description: fd.description || '', parentOrgId: fd.parentOrgId || 'ROOT' });
+      showToast('組織を作成しました', 'success');
+    }
+    setDrawerOpen(false);
+    load();
+  }
+
+  async function handleDelete(org) {
+    if (!confirm(`「${org.name}」を削除しますか？`)) return;
+    try {
+      await deleteOrg(org.orgId);
+      showToast('組織を削除しました', 'success');
+      load();
+    } catch (err) {
+      showToast(err.status === 409 ? '配下の組織またはユーザーが存在するため削除できません' : '削除に失敗しました', 'error');
+    }
+  }
+
+  const toggleCollapsed = id => setCollapsed(p => ({ ...p, [id]: !p[id] }));
+  const rootOrgs = orgs ? orgs.filter(o => o.parentOrgId === 'ROOT') : [];
+  const getChildren = parentId => orgs ? orgs.filter(o => o.parentOrgId === parentId) : [];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <button className="btn btn-primary" onClick={() => { setEditTarget(null); setDrawerOpen(true); }}>+ 組織追加</button>
+      </div>
+      <div className="card">
+        <table>
+          <thead>
+            <tr><th scope="col">組織名</th><th scope="col">説明</th><th scope="col">親組織</th><th scope="col">操作</th></tr>
+          </thead>
+          <tbody>
+            {orgs === null ? (
+              <tr><td colSpan={4}><div className="skeleton skeleton-row" /></td></tr>
+            ) : orgs.length === 0 ? (
+              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>組織なし</td></tr>
+            ) : (
+              <>
+                {rootOrgs.map(org => {
+                  const children = getChildren(org.orgId);
+                  return (
+                    <Fragment key={org.orgId}>
+                      <OrgRow org={org} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} hasChildren={children.length > 0} />
+                      {!collapsed[org.orgId] && children.map(child => (
+                        <OrgRow key={child.orgId} org={child} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} hasChildren={false} />
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <Drawer isOpen={drawerOpen} title={editTarget ? '組織を編集' : '組織を追加'} onClose={() => setDrawerOpen(false)} onSubmit={handleSubmit}>
+        <div className="field">
+          <label>組織名 <span style={{ color: 'var(--color-danger)' }}>*</span></label>
+          <input type="text" name="name" defaultValue={editTarget?.name || ''} placeholder="例：営業部" />
+        </div>
+        <div className="field">
+          <label>説明</label>
+          <textarea name="description" defaultValue={editTarget?.description || ''} placeholder="任意の説明..." />
+        </div>
+        {!editTarget && (
+          <div className="field">
+            <label>親組織</label>
+            <select name="parentOrgId" defaultValue="ROOT">
+              <option value="ROOT">なし（トップレベル）</option>
+              {(orgs || []).map(o => <option key={o.orgId} value={o.orgId}>{o.name}</option>)}
+            </select>
+          </div>
+        )}
+      </Drawer>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ④ 施設種別マスタタブ
+// ─────────────────────────────────────────────
+
+function FacilityTypesTab() {
+  const showToast = useToast();
+  const [types, setTypes] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [isBookable, setIsBookable] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await getFacilityTypes();
+      setTypes(data.facilityTypes || []);
+    } catch {
+      setTypes([]);
+      showToast('施設種別の取得に失敗しました', 'error');
+    }
+  }, [showToast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function openEdit(t) {
+    setEditTarget(t);
+    setIsBookable(t.isBookable !== false);
+    setDrawerOpen(true);
+  }
+
+  function openCreate() {
+    setEditTarget(null);
+    setIsBookable(true);
+    setDrawerOpen(true);
+  }
+
+  async function handleSubmit(fd) {
+    if (!fd.name?.trim()) throw '種別名を入力してください';
+    if (editTarget) {
+      await updateFacilityType(editTarget.typeId, { name: fd.name.trim(), description: fd.description || '', isBookable });
+      showToast('施設種別を更新しました', 'success');
+    } else {
+      await createFacilityType({ name: fd.name.trim(), description: fd.description || '', isBookable });
+      showToast('施設種別を作成しました', 'success');
+    }
+    setDrawerOpen(false);
+    load();
+  }
+
+  async function handleDelete(t) {
+    if (!confirm(`「${t.name}」を削除しますか？`)) return;
+    try {
+      await deleteFacilityType(t.typeId);
+      showToast('施設種別を削除しました', 'success');
+      load();
+    } catch (err) {
+      showToast(err.status === 409 ? 'この種別を使用中の施設があるため削除できません' : '削除に失敗しました', 'error');
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <button className="btn btn-primary" onClick={openCreate}>+ 種別追加</button>
+      </div>
+      <div className="card">
+        <table>
+          <thead>
+            <tr><th scope="col">種別名</th><th scope="col">説明</th><th scope="col">予約可否</th><th scope="col">操作</th></tr>
+          </thead>
+          <tbody>
+            {types === null ? (
+              <tr><td colSpan={4}><div className="skeleton skeleton-row" /></td></tr>
+            ) : types.length === 0 ? (
+              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>施設種別なし</td></tr>
+            ) : types.map(t => (
+              <tr key={t.typeId}>
+                <td>{t.name}</td>
+                <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{t.description || '—'}</td>
+                <td>
+                  <span className={`badge ${t.isBookable !== false ? 'badge-green' : 'badge-gray'}`}>
+                    {t.isBookable !== false ? '予約可' : '予約不可'}
+                  </span>
+                </td>
+                <td style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button type="button" className="btn btn-sm" onClick={() => openEdit(t)}>編集</button>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(t)}>削除</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Drawer isOpen={drawerOpen} title={editTarget ? '種別を編集' : '種別を追加'} onClose={() => setDrawerOpen(false)} onSubmit={handleSubmit}>
+        <div className="field">
+          <label>種別名 <span style={{ color: 'var(--color-danger)' }}>*</span></label>
+          <input type="text" name="name" defaultValue={editTarget?.name || ''} placeholder="例：会議室・社用車・プロジェクター" />
+        </div>
+        <div className="field">
+          <label>説明</label>
+          <textarea name="description" defaultValue={editTarget?.description || ''} placeholder="任意の説明..." />
+        </div>
+        <div className="field">
+          <div className="field-inline">
+            <label className="toggle">
+              <input type="checkbox" checked={isBookable} onChange={e => setIsBookable(e.target.checked)} />
+              <span className="toggle-slider" />
+            </label>
+            <span style={{ fontSize: '0.85rem' }}>予約可能</span>
+          </div>
+          <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.3rem' }}>
+            オフにするとグループ・分類ノードとして使用
+          </p>
+        </div>
+      </Drawer>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ⑤ 依存関係タブ
+// ─────────────────────────────────────────────
+
+// システム定義の依存ルール（表示専用 — 変更はバックエンドで管理）
+// required:     このフィールドが論理的に必須かどうか
+// backfillable: 親マスタから選択してデフォルト値を一括設定できるか
+const RELATION_RULES = [
+  { id: 'reservation_facility',  child: 'RESERVATION',    field: 'facilityId',     parent: 'FACILITY',     onDelete: 'CASCADE',  required: true,  backfillable: false, desc: '施設が削除されると紐づく予約も連鎖削除' },
+  { id: 'reservation_user',      child: 'RESERVATION',    field: 'reservedBy',     parent: 'USER',         onDelete: 'SET_NULL', required: true,  backfillable: false, desc: 'ユーザー削除後も予約は残るが予約者が匿名化' },
+  { id: 'schedule_user',         child: 'SCHEDULE',       field: 'createdBy',      parent: 'USER',         onDelete: 'SET_NULL', required: true,  backfillable: false, desc: 'ユーザー削除後もスケジュールは残るが作成者が匿名化' },
+  { id: 'document_user',         child: 'DOCUMENT',       field: 'uploadedBy',     parent: 'USER',         onDelete: 'SET_NULL', required: true,  backfillable: false, desc: 'ユーザー削除後もドキュメントは残るがアップロード者が匿名化' },
+  { id: 'facility_parent',       child: 'FACILITY',       field: 'parentId',       parent: 'FACILITY',     onDelete: 'RESTRICT', required: true,  backfillable: false, desc: '子施設が存在する間はグループ削除不可（実装済み）' },
+  { id: 'facility_type',         child: 'FACILITY',       field: 'facilityTypeId', parent: 'FACILITYTYPE', onDelete: 'RESTRICT', required: true,  backfillable: true,  desc: '使用中の施設種別は削除不可' },
+  { id: 'facility_org',          child: 'FACILITY',       field: 'orgId',          parent: 'ORG',          onDelete: 'SET_NULL', required: false, backfillable: true,  desc: '組織解体後も施設は残るが所属組織が解除' },
+  { id: 'user_org',              child: 'USER_PROFILE',   field: 'orgId',          parent: 'ORG',          onDelete: 'SET_NULL', required: false, backfillable: true,  desc: '組織解体後もユーザーは残るが所属組織が解除' },
+];
+
+// 親エンティティ名 → { APIローダー, value/labelの取得 }
+const PARENT_API = {
+  ORG:          () => getOrgs().then(d => (d.orgs || []).map(o => ({ value: o.orgId,       label: o.name }))),
+  FACILITYTYPE: () => getFacilityTypes().then(d => (d.facilityTypes || []).map(t => ({ value: t.typeId,    label: t.name }))),
+  FACILITY:     () => getFacilities().then(d => (d.facilities || []).map(f => ({ value: f.facilityId, label: f.name }))),
+};
+
+// バックフィル行コンポーネント（1ルール = 1行）
+function BackfillRow({ rule }) {
+  const showToast = useToast();
+  const [options, setOptions] = useState(null); // null = ロード中
+  const [selected, setSelected] = useState('');
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    const loader = PARENT_API[rule.parent];
+    if (loader) {
+      loader().then(setOptions).catch(() => setOptions([]));
+    } else {
+      setOptions([]);
+    }
+  }, [rule.parent]);
+
+  async function handleBackfill() {
+    if (!selected) return;
+    const label = options?.find(o => o.value === selected)?.label || selected;
+    if (!confirm(`「${rule.child}.${rule.field}」が未設定のレコードへ「${label}」をデフォルト値として設定します。よろしいですか？`)) return;
+    setRunning(true);
+    try {
+      const res = await runBackfill(rule.id, selected);
+      showToast(`バックフィル完了（${res.updatedCount ?? 0}件更新）`, 'success');
+    } catch {
+      showToast('バックフィルに失敗しました', 'error');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <tr>
+      <td>
+        <code style={{ fontSize: '0.78rem' }}>{rule.child}</code>
+        {rule.required && <span className="badge badge-blue" style={{ marginLeft: '0.4rem', fontSize: '0.65rem' }}>必須</span>}
+      </td>
+      <td><code style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{rule.field}</code></td>
+      <td><code style={{ fontSize: '0.78rem' }}>{rule.parent}</code></td>
+      <td>
+        {options === null ? (
+          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>読み込み中…</span>
+        ) : (
+          <select
+            value={selected}
+            onChange={e => setSelected(e.target.value)}
+            style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem', borderRadius: 4, border: '1px solid var(--color-border)', minWidth: 160 }}
+          >
+            <option value="">— デフォルト値を選択 —</option>
+            {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        )}
+      </td>
+      <td>
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary"
+          onClick={handleBackfill}
+          disabled={!selected || running || options === null}
+        >
+          {running ? '実行中…' : 'バックフィル'}
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+const POLICY_STYLE = {
+  CASCADE:  { cls: 'badge-red',    label: 'CASCADE'  },
+  RESTRICT: { cls: 'badge-orange', label: 'RESTRICT' },
+  SET_NULL: { cls: 'badge-blue',   label: 'SET_NULL' },
+  IGNORE:   { cls: 'badge-gray',   label: 'IGNORE'   },
+};
+
+function RelationsTab() {
+  const showToast = useToast();
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null); // { dryRun, cleanedAt, summary[] }
+
+  async function handleCleanse(dryRun) {
+    if (!dryRun && !confirm('実際にデータを修正します。よろしいですか？')) return;
+    setRunning(true);
+    setResult(null);
+    try {
+      const data = await runCleanse(dryRun);
+      setResult({ ...data, dryRun, cleanedAt: new Date().toLocaleString('ja-JP') });
+      showToast(dryRun ? 'ドライラン完了' : 'クレンジング完了', 'success');
+    } catch {
+      showToast('クレンジングに失敗しました', 'error');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div>
+      {/* 説明 */}
+      <div className="card" style={{ marginBottom: '1rem', padding: '0.85rem 1rem', background: '#fffbeb', border: '1px solid #fde68a' }}>
+        <p style={{ fontSize: '0.83rem', color: '#78350f', margin: 0 }}>
+          DynamoDB はFK制約を持たないため、参照整合性はアプリケーション層で管理します。
+          下表の依存ルールに基づいてオーファンレコードを検出・修正できます。
+          ルール定義の変更はバックエンドの管理者作業が必要です。
+        </p>
+      </div>
+
+      {/* 依存ルール一覧 */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">子エンティティ</th>
+              <th scope="col">参照フィールド</th>
+              <th scope="col">親エンティティ</th>
+              <th scope="col">必須</th>
+              <th scope="col">削除ポリシー</th>
+              <th scope="col">説明</th>
+            </tr>
+          </thead>
+          <tbody>
+            {RELATION_RULES.map(r => {
+              const ps = POLICY_STYLE[r.onDelete] || POLICY_STYLE.IGNORE;
+              return (
+                <tr key={r.id}>
+                  <td><code style={{ fontSize: '0.78rem' }}>{r.child}</code></td>
+                  <td><code style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{r.field}</code></td>
+                  <td><code style={{ fontSize: '0.78rem' }}>{r.parent}</code></td>
+                  <td>
+                    {r.required
+                      ? <span className="badge badge-blue">必須</span>
+                      : <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>任意</span>}
+                  </td>
+                  <td><span className={`badge ${ps.cls}`}>{ps.label}</span></td>
+                  <td style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>{r.desc}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* クレンジング実行 */}
+      <div className="card" style={{ padding: '1rem 1.25rem' }}>
+        <h3 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '0.75rem' }}>データクレンジング</h3>
+        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: result ? '1rem' : 0 }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => handleCleanse(true)}
+            disabled={running}
+          >
+            {running ? '実行中...' : 'ドライラン（件数確認のみ）'}
+          </button>
+          <button
+            className="btn btn-danger"
+            onClick={() => handleCleanse(false)}
+            disabled={running}
+          >
+            {running ? '実行中...' : 'クレンジング実行（データ修正）'}
+          </button>
+        </div>
+
+        <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>
+          ドライランで件数を確認してから実行することを推奨します。
+        </p>
+
+        {result && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#f8fafc', borderRadius: 6, border: '1px solid var(--color-border)' }}>
+            <p style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+              {result.dryRun ? '[ドライラン] ' : '[実行済み] '}
+              {result.cleanedAt}
+            </p>
+            {(result.summary || []).length === 0 ? (
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>オーファンレコードは見つかりませんでした</p>
+            ) : (
+              <table style={{ fontSize: '0.82rem' }}>
+                <thead>
+                  <tr><th scope="col">ルール</th><th scope="col">検出件数</th><th scope="col">処理</th></tr>
+                </thead>
+                <tbody>
+                  {result.summary.map((s, i) => (
+                    <tr key={i}>
+                      <td><code style={{ fontSize: '0.78rem' }}>{s.ruleId}</code></td>
+                      <td>{s.orphanCount}件</td>
+                      <td style={{ color: 'var(--color-text-muted)' }}>{s.action || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
+      {/* バックフィル */}
+      <div className="card" style={{ padding: '1rem 1.25rem', marginTop: '1rem' }}>
+        <h3 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '0.3rem' }}>フィールド バックフィル</h3>
+        <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: '0.85rem' }}>
+          フィールドを新たに追加した際、すでに存在するレコードに値が欠落している場合があります。
+          親マスタからデフォルト値を選択して一括設定します。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">対象エンティティ</th>
+              <th scope="col">フィールド</th>
+              <th scope="col">参照先マスタ</th>
+              <th scope="col">デフォルト値（選択）</th>
+              <th scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {RELATION_RULES.filter(r => r.backfillable).map(rule => (
+              <BackfillRow key={rule.id} rule={rule} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 管理設定ページ本体
+// ─────────────────────────────────────────────
 
 const TABS = [
-  { id: 'users', label: 'ユーザーマスタ' },
-  { id: 'facilities', label: '施設マスタ' },
+  { id: 'users',         label: 'ユーザー' },
+  { id: 'facilities',    label: '施設' },
+  { id: 'orgs',          label: '組織' },
+  { id: 'facilityTypes', label: '施設種別' },
+  { id: 'relations',     label: '依存関係' },
 ];
 
 export default function Admin() {
@@ -370,7 +830,7 @@ export default function Admin() {
   return (
     <div>
       <div className="page-header"><h2>管理設定</h2></div>
-      <div style={{ display: 'flex', gap: '0', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)', overflowX: 'auto' }}>
         {TABS.map(tab => (
           <button
             type="button"
@@ -386,13 +846,18 @@ export default function Admin() {
               cursor: 'pointer',
               fontSize: '0.9rem',
               marginBottom: '-1px',
+              whiteSpace: 'nowrap',
             }}
           >
             {tab.label}
           </button>
         ))}
       </div>
-      {activeTab === 'users' ? <UsersTab /> : <FacilitiesTab />}
+      {activeTab === 'users'         && <UsersTab />}
+      {activeTab === 'facilities'    && <FacilitiesTab />}
+      {activeTab === 'orgs'          && <OrgsTab />}
+      {activeTab === 'facilityTypes' && <FacilityTypesTab />}
+      {activeTab === 'relations'     && <RelationsTab />}
     </div>
   );
 }
