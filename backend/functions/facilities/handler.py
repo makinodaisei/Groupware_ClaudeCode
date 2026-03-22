@@ -44,6 +44,8 @@ def _item_to_facility(item: dict) -> dict:
         "location": item.get("location", ""),
         "parentId": item.get("parentId", "ROOT"),
         "facilityType": item.get("facilityType", "facility"),
+        "facilityTypeId": item.get("facilityTypeId", ""),
+        "orgId": item.get("orgId", ""),
         "createdAt": item.get("createdAt"),
     }
 
@@ -141,6 +143,8 @@ def create_facility(event: dict) -> dict:
         "location": sanitize_string(body.get("location", ""), 500),
         "parentId": body.get("parentId", "ROOT"),
         "facilityType": facility_type,
+        "facilityTypeId": body.get("facilityTypeId", ""),
+        "orgId": body.get("orgId", ""),
         "createdAt": now_iso(),
         "createdBy": auth.get_user_id(event),
     }
@@ -181,6 +185,12 @@ def update_facility(event: dict) -> dict:
         update_expr_parts.append("#loc = :loc")
         expr_attr_names["#loc"] = "location"
         expr_attr_values[":loc"] = sanitize_string(body["location"], 500)
+    if "facilityTypeId" in body:
+        update_expr_parts.append("facilityTypeId = :ftid")
+        expr_attr_values[":ftid"] = body["facilityTypeId"]
+    if "orgId" in body:
+        update_expr_parts.append("orgId = :oid")
+        expr_attr_values[":oid"] = body["orgId"]
 
     if not update_expr_parts:
         return response.bad_request("No fields to update")

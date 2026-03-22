@@ -31,12 +31,14 @@ function CollapseBtn({ collapsed, onToggle }) {
 function UsersTab() {
   const showToast = useToast();
   const [users, setUsers] = useState(null);
+  const [orgs, setOrgs] = useState([]);
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await getUsers();
-      setUsers(data.users || []);
+      const [uData, oData] = await Promise.all([getUsers(), getOrgs()]);
+      setUsers(uData.users || []);
+      setOrgs(oData.orgs || []);
     } catch {
       setUsers([]);
       showToast('ユーザーの取得に失敗しました', 'error');
@@ -48,7 +50,7 @@ function UsersTab() {
   async function handleInvite(fd) {
     if (!fd.email?.trim()) throw 'メールアドレスを入力してください';
     if (!fd.name?.trim()) throw '表示名を入力してください';
-    await createUser({ email: fd.email.trim(), name: fd.name.trim(), role: fd.role || 'user' });
+    await createUser({ email: fd.email.trim(), name: fd.name.trim(), role: fd.role || 'user', orgId: fd.orgId || '' });
     showToast('招待メールを送信しました', 'success');
     load();
   }
@@ -93,17 +95,18 @@ function UsersTab() {
       <div className="card">
         <table>
           <thead>
-            <tr><th scope="col">名前</th><th scope="col">メール</th><th scope="col">ロール</th><th scope="col">状態</th><th scope="col">操作</th></tr>
+            <tr><th scope="col">名前</th><th scope="col">メール</th><th scope="col">組織</th><th scope="col">ロール</th><th scope="col">状態</th><th scope="col">操作</th></tr>
           </thead>
           <tbody>
             {users === null ? (
-              <tr><td colSpan={5}><div className="skeleton skeleton-row" /></td></tr>
+              <tr><td colSpan={6}><div className="skeleton skeleton-row" /></td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>ユーザーなし</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>ユーザーなし</td></tr>
             ) : users.map(u => (
               <tr key={u.userId}>
                 <td>{u.name}</td>
                 <td style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{u.email}</td>
+                <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{orgs.find(o => o.orgId === u.orgId)?.name || '—'}</td>
                 <td>
                   <select
                     value={u.role}
@@ -151,6 +154,13 @@ function UsersTab() {
             ))}
           </div>
         </div>
+        <div className="field">
+          <label>所属組織</label>
+          <select name="orgId" defaultValue="">
+            <option value="">なし</option>
+            {orgs.map(o => <option key={o.orgId} value={o.orgId}>{o.name}</option>)}
+          </select>
+        </div>
       </Drawer>
     </div>
   );
@@ -160,8 +170,10 @@ function UsersTab() {
 // ② 施設マスタタブ
 // ─────────────────────────────────────────────
 
-function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleCollapsed }) {
+function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleCollapsed, facilityTypes, orgs }) {
   const isGroup = f.facilityType === 'group';
+  const typeName = facilityTypes.find(t => t.typeId === f.facilityTypeId)?.name || (isGroup ? 'グループ' : '施設');
+  const orgName = orgs.find(o => o.orgId === f.orgId)?.name || '—';
   return (
     <tr>
       <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
@@ -174,11 +186,8 @@ function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleColla
       </td>
       <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.location || '—'}</td>
       <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{f.capacity}名</td>
-      <td>
-        <span className={`badge ${f.facilityType === 'group' ? 'badge-orange' : 'badge-blue'}`}>
-          {f.facilityType === 'group' ? 'グループ' : '施設'}
-        </span>
-      </td>
+      <td style={{ fontSize: '0.82rem' }}>{typeName}</td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{orgName}</td>
       <td style={{ display: 'flex', gap: '0.4rem' }}>
         <button type="button" className="btn btn-sm" onClick={() => openEdit(f)}>編集</button>
         <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(f)}>削除</button>
@@ -190,14 +199,18 @@ function FacilityRow({ f, indent, openEdit, handleDelete, collapsed, toggleColla
 function FacilitiesTab() {
   const showToast = useToast();
   const [facilities, setFacilities] = useState(null);
+  const [facilityTypes, setFacilityTypes] = useState([]);
+  const [orgs, setOrgs] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [collapsed, setCollapsed] = useState({});
 
   const load = useCallback(async () => {
     try {
-      const data = await getFacilities();
-      setFacilities(data.facilities || []);
+      const [fData, tData, oData] = await Promise.all([getFacilities(), getFacilityTypes(), getOrgs()]);
+      setFacilities(fData.facilities || []);
+      setFacilityTypes(tData.facilityTypes || []);
+      setOrgs(oData.orgs || []);
     } catch {
       setFacilities([]);
       showToast('施設情報の取得に失敗しました', 'error');
@@ -216,15 +229,20 @@ function FacilitiesTab() {
         description: fd.description || '',
         capacity: fd.capacity ? parseInt(fd.capacity) : 1,
         location: fd.location || '',
+        facilityTypeId: fd.facilityTypeId || '',
+        orgId: fd.orgId || '',
       });
       showToast('施設を更新しました', 'success');
     } else {
+      const selectedType = facilityTypes.find(t => t.typeId === fd.facilityTypeId);
       await createFacility({
         name: fd.name.trim(),
         description: fd.description || '',
         capacity: fd.capacity ? parseInt(fd.capacity) : 1,
         location: fd.location || '',
-        facilityType: fd.facilityType || 'facility',
+        facilityType: selectedType?.isBookable === false ? 'group' : 'facility',
+        facilityTypeId: fd.facilityTypeId || '',
+        orgId: fd.orgId || '',
         parentId: fd.parentId || 'ROOT',
       });
       showToast('施設を作成しました', 'success');
@@ -256,25 +274,25 @@ function FacilitiesTab() {
       <div className="card">
         <table>
           <thead>
-            <tr><th scope="col">名前</th><th scope="col">場所</th><th scope="col">収容</th><th scope="col">種別</th><th scope="col">操作</th></tr>
+            <tr><th scope="col">名前</th><th scope="col">場所</th><th scope="col">収容</th><th scope="col">種別</th><th scope="col">組織</th><th scope="col">操作</th></tr>
           </thead>
           <tbody>
             {facilities === null ? (
-              <tr><td colSpan={5}><div className="skeleton skeleton-row" /></td></tr>
+              <tr><td colSpan={6}><div className="skeleton skeleton-row" /></td></tr>
             ) : facilities.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>施設なし</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>施設なし</td></tr>
             ) : (
               <>
                 {groups.map(g => (
                   <Fragment key={g.facilityId}>
-                    <FacilityRow f={g} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} />
+                    <FacilityRow f={g} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} orgs={orgs} />
                     {!collapsed[g.facilityId] && facilities.filter(f => f.parentId === g.facilityId).map(child => (
-                      <FacilityRow key={child.facilityId} f={child} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} />
+                      <FacilityRow key={child.facilityId} f={child} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} orgs={orgs} />
                     ))}
                   </Fragment>
                 ))}
                 {topLevel.map(f => (
-                  <FacilityRow key={f.facilityId} f={f} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} />
+                  <FacilityRow key={f.facilityId} f={f} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} facilityTypes={facilityTypes} orgs={orgs} />
                 ))}
               </>
             )}
@@ -288,17 +306,26 @@ function FacilitiesTab() {
           <input type="text" name="name" defaultValue={editTarget?.name || ''} placeholder="例：第1会議室" />
         </div>
         <div className="field">
-          <label>種別</label>
-          <select name="facilityType" defaultValue={editTarget?.facilityType || 'facility'} disabled={!!editTarget}>
-            <option value="facility">施設（予約可能）</option>
-            <option value="group">グループ（分類用）</option>
+          <label>施設種別</label>
+          <select name="facilityTypeId" defaultValue={editTarget?.facilityTypeId || ''}>
+            <option value="">未設定</option>
+            {facilityTypes.map(t => <option key={t.typeId} value={t.typeId}>{t.name}{t.isBookable === false ? '（予約不可）' : ''}</option>)}
           </select>
         </div>
+        {!editTarget && (
+          <div className="field">
+            <label>親グループ</label>
+            <select name="parentId" defaultValue="ROOT">
+              <option value="ROOT">なし（トップレベル）</option>
+              {groups.map(g => <option key={g.facilityId} value={g.facilityId}>{g.name}</option>)}
+            </select>
+          </div>
+        )}
         <div className="field">
-          <label>親グループ</label>
-          <select name="parentId" defaultValue={editTarget?.parentId || 'ROOT'} disabled={!!editTarget}>
-            <option value="ROOT">なし（トップレベル）</option>
-            {groups.map(g => <option key={g.facilityId} value={g.facilityId}>{g.name}</option>)}
+          <label>所属組織</label>
+          <select name="orgId" defaultValue={editTarget?.orgId || ''}>
+            <option value="">なし</option>
+            {orgs.map(o => <option key={o.orgId} value={o.orgId}>{o.name}</option>)}
           </select>
         </div>
         <div className="field">
@@ -322,7 +349,10 @@ function FacilitiesTab() {
 // ③ 組織マスタタブ
 // ─────────────────────────────────────────────
 
-function OrgRow({ org, indent, openEdit, handleDelete, collapsed, toggleCollapsed, hasChildren }) {
+function OrgRow({ org, allOrgs, indent, openEdit, handleDelete, collapsed, toggleCollapsed, hasChildren }) {
+  const parentName = (!org.parentOrgId || org.parentOrgId === 'ROOT')
+    ? '—'
+    : allOrgs.find(o => o.orgId === org.parentOrgId)?.name || org.parentOrgId;
   return (
     <tr>
       <td style={{ paddingLeft: indent ? '2rem' : undefined }}>
@@ -334,7 +364,7 @@ function OrgRow({ org, indent, openEdit, handleDelete, collapsed, toggleCollapse
         ) : org.name}
       </td>
       <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{org.description || '—'}</td>
-      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{org.parentOrgId === 'ROOT' ? '—' : org.parentOrgId}</td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>{parentName}</td>
       <td style={{ display: 'flex', gap: '0.4rem' }}>
         <button type="button" className="btn btn-sm" onClick={() => openEdit(org)}>編集</button>
         <button type="button" className="btn btn-sm btn-danger" onClick={() => handleDelete(org)}>削除</button>
@@ -413,9 +443,9 @@ function OrgsTab() {
                   const children = getChildren(org.orgId);
                   return (
                     <Fragment key={org.orgId}>
-                      <OrgRow org={org} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} hasChildren={children.length > 0} />
+                      <OrgRow org={org} allOrgs={orgs} openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} hasChildren={children.length > 0} />
                       {!collapsed[org.orgId] && children.map(child => (
-                        <OrgRow key={child.orgId} org={child} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} hasChildren={false} />
+                        <OrgRow key={child.orgId} org={child} allOrgs={orgs} indent openEdit={openEdit} handleDelete={handleDelete} collapsed={collapsed} toggleCollapsed={toggleCollapsed} hasChildren={false} />
                       ))}
                     </Fragment>
                   );

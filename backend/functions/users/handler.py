@@ -6,7 +6,8 @@ import re
 
 import auth
 import response
-from db_client import get_cognito_client
+from boto3.dynamodb.conditions import Attr
+from db_client import get_cognito_client, get_table
 from utils import get_method_and_path
 from router import Router
 from validators import parse_body, require_fields, sanitize_string
@@ -24,6 +25,16 @@ VALID_ROLES = ("admin", "editor", "user")
 def _extract_user_id(path: str) -> str | None:
     match = re.search(r"/users/([^/]+)$", path)
     return match.group(1) if match else None
+
+
+def _get_user_org_map() -> dict:
+    """Scan DynamoDB for all USER_PROFILE records and return {userId: orgId}."""
+    table = get_table()
+    resp = table.scan(FilterExpression=Attr("SK").eq("USER"))
+    return {
+        item["PK"].replace("USER#", ""): item.get("orgId", "")
+        for item in resp.get("Items", [])
+    }
 
 
 def _extract_user_from_cognito(user: dict) -> dict:
@@ -53,7 +64,12 @@ def list_users(event: dict) -> dict:
         kwargs["PaginationToken"] = params["token"]
 
     resp = cognito.list_users(**kwargs)
-    users = [_extract_user_from_cognito(u) for u in resp.get("Users", [])]
+    org_map = _get_user_org_map()
+    users = []
+    for u in resp.get("Users", []):
+        user = _extract_user_from_cognito(u)
+        user["orgId"] = org_map.get(user["userId"], "")
+        users.append(user)
     return response.ok({
         "users": users,
         "nextToken": resp.get("PaginationToken"),
@@ -122,6 +138,14 @@ def create_user(event: dict) -> dict:
             GroupName=group,
         )
         user = _extract_user_from_cognito(resp["User"])
+        org_id = body.get("orgId", "")
+        user["orgId"] = org_id
+        # Write USER_PROFILE to DynamoDB for orgId and admin cleanse support
+        get_table().put_item(Item={
+            "PK": f"USER#{user['userId']}",
+            "SK": "USER",
+            "orgId": org_id,
+        })
         return response.created(user)
     except cognito.exceptions.UsernameExistsException:
         return response.conflict("User with this email already exists")
@@ -139,8 +163,9 @@ def update_user(event: dict) -> dict:
     name = body.get("name")
     role = body.get("role")
     enabled = body.get("enabled")
+    org_id = body.get("orgId")
 
-    if name is None and role is None and enabled is None:
+    if name is None and role is None and enabled is None and org_id is None:
         return response.bad_request("No fields to update")
 
     cognito = get_cognito_client()
@@ -190,6 +215,15 @@ def update_user(event: dict) -> dict:
             UserAttributes=attrs,
         )
 
+    if "orgId" in body:
+        if not auth.is_admin(event):
+            return response.forbidden("Only admins can change organization")
+        get_table().update_item(
+            Key={"PK": f"USER#{target_id}", "SK": "USER"},
+            UpdateExpression="SET orgId = :oid",
+            ExpressionAttributeValues={":oid": org_id or ""},
+        )
+
     return response.ok({"userId": target_id, "updated": True})
 
 
@@ -208,6 +242,8 @@ def delete_user(event: dict) -> dict:
     cognito = get_cognito_client()
     try:
         cognito.admin_delete_user(UserPoolId=USER_POOL_ID, Username=target_id)
+        # Clean up DynamoDB USER_PROFILE
+        get_table().delete_item(Key={"PK": f"USER#{target_id}", "SK": "USER"})
         return response.no_content()
     except cognito.exceptions.UserNotFoundException:
         return response.not_found("User")
